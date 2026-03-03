@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.os.Build
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.theveloper.pixelplay.data.WearAudioOutputRoute
 import com.theveloper.pixelplay.data.WearLocalPlayerRepository
 import com.theveloper.pixelplay.data.WearOutputTarget
 import com.theveloper.pixelplay.data.WearPlaybackController
@@ -116,6 +117,7 @@ class WearPlayerViewModel @Inject constructor(
     val isPhoneConnected: StateFlow<Boolean> = stateRepository.isPhoneConnected
     val phoneVolumeState: StateFlow<WearVolumeState> = stateRepository.volumeState
     val watchVolumeState: StateFlow<WearVolumeState> = volumeRepository.watchVolumeState
+    val watchAudioRoutes: StateFlow<List<WearAudioOutputRoute>> = volumeRepository.watchAudioRoutes
 
     val activeVolumeState: StateFlow<WearVolumeState> = combine(
         isWatchOutputSelected,
@@ -134,10 +136,13 @@ class WearPlayerViewModel @Inject constructor(
     val activeVolumeDeviceName: StateFlow<String> = combine(
         isWatchOutputSelected,
         phoneVolumeState,
+        watchVolumeState,
         stateRepository.phoneDeviceName,
-    ) { isWatchOutput, phoneVolume, phoneDeviceName ->
+    ) { isWatchOutput, phoneVolume, watchVolume, phoneDeviceName ->
         if (isWatchOutput) {
-            Build.MODEL.takeIf { it.isNotBlank() } ?: "Watch"
+            watchVolume.routeName.ifBlank {
+                Build.MODEL.takeIf { it.isNotBlank() } ?: "Watch"
+            }
         } else {
             phoneVolume.routeName.ifBlank { phoneDeviceName.ifBlank { "Phone" } }
         }
@@ -146,9 +151,10 @@ class WearPlayerViewModel @Inject constructor(
     val activeOutputRouteType: StateFlow<String> = combine(
         isWatchOutputSelected,
         phoneVolumeState,
-    ) { isWatchOutput, phoneVolume ->
+        watchVolumeState,
+    ) { isWatchOutput, phoneVolume, watchVolume ->
         if (isWatchOutput) {
-            WearVolumeState.ROUTE_TYPE_WATCH
+            watchVolume.routeType.ifBlank { WearVolumeState.ROUTE_TYPE_WATCH }
         } else {
             phoneVolume.routeType.ifBlank { WearVolumeState.ROUTE_TYPE_PHONE }
         }
@@ -226,6 +232,23 @@ class WearPlayerViewModel @Inject constructor(
                 playbackController.requestPhoneVolumeState()
             }
         }
+    }
+
+    fun selectWatchOutput(routeId: String) {
+        volumeRepository.selectWatchAudioRoute(routeId)
+        if (outputTarget.value != WearOutputTarget.WATCH) {
+            selectOutput(WearOutputTarget.WATCH)
+        } else {
+            refreshActiveVolumeState()
+        }
+    }
+
+    fun openWatchOutputPicker() {
+        volumeRepository.launchWatchAudioOutputPicker()
+    }
+
+    fun setWatchRouteDiscoveryEnabled(enabled: Boolean) {
+        volumeRepository.setWatchRouteDiscoveryEnabled(enabled)
     }
 
     fun togglePlayPause() {

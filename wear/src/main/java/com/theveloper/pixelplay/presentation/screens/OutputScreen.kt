@@ -9,8 +9,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Bluetooth
 import androidx.compose.material.icons.rounded.Watch
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -27,6 +29,7 @@ import androidx.wear.compose.material.ChipDefaults
 import androidx.wear.compose.material.Icon
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
+import com.theveloper.pixelplay.data.WearAudioOutputRoute
 import com.google.android.horologist.compose.layout.ScalingLazyColumn
 import com.google.android.horologist.compose.layout.rememberResponsiveColumnState
 import com.theveloper.pixelplay.data.WearOutputTarget
@@ -38,6 +41,7 @@ import com.theveloper.pixelplay.presentation.theme.screenBackgroundColor
 import com.theveloper.pixelplay.presentation.theme.surfaceContainerColor
 import com.theveloper.pixelplay.presentation.theme.surfaceContainerHighestColor
 import com.theveloper.pixelplay.presentation.viewmodel.WearPlayerViewModel
+import com.theveloper.pixelplay.shared.WearPlayerState
 import com.theveloper.pixelplay.shared.WearVolumeState
 
 @Composable
@@ -49,11 +53,20 @@ fun OutputScreen(
     val canCurrentSongPlayOnWatch by viewModel.canCurrentSongPlayOnWatch.collectAsState()
     val playerState by viewModel.playerState.collectAsState()
     val phoneVolumeState by viewModel.phoneVolumeState.collectAsState()
+    val watchAudioRoutes by viewModel.watchAudioRoutes.collectAsState()
+    val watchVolumeState by viewModel.watchVolumeState.collectAsState()
     val palette = LocalWearPalette.current
     val columnState = rememberResponsiveColumnState()
     val phoneRouteType = phoneVolumeState.routeType.ifBlank { WearVolumeState.ROUTE_TYPE_PHONE }
     val phoneRouteName = phoneVolumeState.routeName.ifBlank { "Phone" }
     val canSwitchToWatch = canCurrentSongPlayOnWatch || outputTarget == WearOutputTarget.WATCH
+
+    DisposableEffect(viewModel) {
+        viewModel.setWatchRouteDiscoveryEnabled(true)
+        onDispose {
+            viewModel.setWatchRouteDiscoveryEnabled(false)
+        }
+    }
 
     val background = palette.screenBackgroundColor()
 
@@ -108,20 +121,55 @@ fun OutputScreen(
                 )
             }
 
+            if (watchAudioRoutes.isEmpty()) {
+                item {
+                    OutputTargetChip(
+                        label = watchVolumeState.routeName.ifBlank { "Watch speaker" },
+                        subtitle = when {
+                            outputTarget == WearOutputTarget.WATCH && playerState.isPlaying -> "Playing on watch"
+                            outputTarget == WearOutputTarget.WATCH -> "Watch selected"
+                            canSwitchToWatch -> "Switch current song to watch"
+                            playerState.songId.isBlank() -> "Play a song first"
+                            else -> "Save this song on watch first"
+                        },
+                        icon = Icons.Rounded.Watch,
+                        selected = outputTarget == WearOutputTarget.WATCH,
+                        enabled = canSwitchToWatch,
+                        onClick = { viewModel.selectOutput(WearOutputTarget.WATCH) },
+                    )
+                }
+            } else {
+                watchAudioRoutes.forEach { route ->
+                    item {
+                        OutputTargetChip(
+                            label = route.name,
+                            subtitle = watchOutputSubtitle(
+                                route = route,
+                                outputTarget = outputTarget,
+                                playerState = playerState,
+                                canSwitchToWatch = canSwitchToWatch,
+                            ),
+                            icon = outputRouteIcon(route.routeType),
+                            selected = outputTarget == WearOutputTarget.WATCH && route.isSelected,
+                            enabled = canSwitchToWatch,
+                            onClick = { viewModel.selectWatchOutput(route.id) },
+                        )
+                    }
+                }
+            }
+
             item {
                 OutputTargetChip(
-                    label = "Watch",
-                    subtitle = when {
-                        outputTarget == WearOutputTarget.WATCH && playerState.isPlaying -> "Playing on watch"
-                        outputTarget == WearOutputTarget.WATCH -> "Watch selected"
-                        canSwitchToWatch -> "Switch current song to watch"
-                        playerState.songId.isBlank() -> "Play a song first"
-                        else -> "Save this song on watch first"
+                    label = "Bluetooth devices",
+                    subtitle = if (watchAudioRoutes.any { it.isBluetooth }) {
+                        "Find or connect another headset"
+                    } else {
+                        "Connect headphones to watch"
                     },
-                    icon = Icons.Rounded.Watch,
-                    selected = outputTarget == WearOutputTarget.WATCH,
-                    enabled = canSwitchToWatch,
-                    onClick = { viewModel.selectOutput(WearOutputTarget.WATCH) },
+                    icon = Icons.Rounded.Bluetooth,
+                    selected = false,
+                    enabled = true,
+                    onClick = viewModel::openWatchOutputPicker,
                 )
             }
         }
@@ -138,6 +186,32 @@ fun OutputScreen(
                 .zIndex(5f),
             color = palette.textPrimary,
         )
+    }
+}
+
+private fun watchOutputSubtitle(
+    route: WearAudioOutputRoute,
+    outputTarget: WearOutputTarget,
+    playerState: WearPlayerState,
+    canSwitchToWatch: Boolean,
+): String {
+    return when {
+        route.isSelected && outputTarget == WearOutputTarget.WATCH && playerState.isPlaying ->
+            "Playing on watch"
+        route.isSelected && outputTarget == WearOutputTarget.WATCH ->
+            "Selected on watch"
+        route.isConnecting ->
+            "Connecting"
+        !canSwitchToWatch && playerState.songId.isBlank() ->
+            "Play a song first"
+        !canSwitchToWatch ->
+            "Save this song on watch first"
+        route.isConnected && outputTarget == WearOutputTarget.WATCH ->
+            "Switch audio to ${route.name}"
+        route.isConnected ->
+            "Switch current song to ${route.name}"
+        else ->
+            "Connect and play on watch"
     }
 }
 

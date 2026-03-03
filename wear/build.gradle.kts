@@ -109,4 +109,5 @@ dependencies {
 
     // Media3 ExoPlayer (standalone local playback)
     implementation(libs.androidx.media3.exoplayer)
+    implementation(libs.androidx.mediarouter)
 }
