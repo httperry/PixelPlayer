@@ -459,6 +459,15 @@ fun PlaylistItem(
                             modifier = Modifier.size(18.dp)
                         )
                     }
+                    if (playlist.source == "NAVIDROME") {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Icon(
+                            painter = painterResource(R.drawable.ic_navidrome),
+                            contentDescription = "Navidrome",
+                            tint = Color.Unspecified,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                 }
                 Text(
                     text = "${playlist.songIds.size} Songs",

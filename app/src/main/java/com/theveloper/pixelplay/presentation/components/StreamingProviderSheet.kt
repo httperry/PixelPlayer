@@ -25,6 +25,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.theveloper.pixelplay.R
+import com.theveloper.pixelplay.presentation.navidrome.auth.NavidromeLoginActivity
 import com.theveloper.pixelplay.presentation.netease.auth.NeteaseLoginActivity
 import com.theveloper.pixelplay.presentation.qqmusic.auth.QqMusicLoginActivity
 import com.theveloper.pixelplay.presentation.telegram.auth.TelegramLoginActivity
@@ -46,6 +47,8 @@ fun StreamingProviderSheet(
     onNavigateToNeteaseDashboard: () -> Unit = {},
     isQqMusicLoggedIn: Boolean = false,
     onNavigateToQqMusicDashboard: () -> Unit = {},
+    isNavidromeLoggedIn: Boolean = false,
+    onNavigateToNavidromeDashboard: () -> Unit = {},
     sheetState: SheetState = rememberModalBottomSheetState(
         skipPartiallyExpanded = true
     )
@@ -141,6 +144,50 @@ fun StreamingProviderSheet(
 
             Spacer(Modifier.height(12.dp))
 
+            // Subsonic Provider
+            ProviderCard(
+                icon = null,
+                iconPainter = null,
+                title = "Subsonic",
+                customIconContent = {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_navidrome),
+                            contentDescription = "Navidrome",
+                            tint = Color.Unspecified,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Icon(
+                            painter = painterResource(R.drawable.ic_subsonic),
+                            contentDescription = "Subsonic",
+                            tint = Color.Unspecified,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                },
+                subtitle = if (isNavidromeLoggedIn)
+                    "✓ Connected (Navidrome/Airsonic)"
+                else
+                    "Connect Navidrome & others",
+                containerColor = Color(0xFFE3F2FD),
+                contentColor = Color(0xFF1565C0),
+                iconColor = Color.Unspecified,
+                shape = cardShape,
+                onClick = {
+                    if (isNavidromeLoggedIn) {
+                        onNavigateToNavidromeDashboard()
+                    } else {
+                        context.startActivity(Intent(context, NavidromeLoginActivity::class.java))
+                    }
+                    onDismissRequest()
+                }
+            )
+
+            Spacer(Modifier.height(12.dp))
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -201,6 +248,7 @@ private fun ProviderCard(
     modifier: Modifier = Modifier,
     icon: ImageVector? = null,
     iconPainter: Painter? = null,
+    customIconContent: @Composable (() -> Unit)? = null,
     title: String,
     subtitle: String,
     containerColor: Color,
@@ -227,7 +275,9 @@ private fun ProviderCard(
                 .fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            if (iconPainter != null) {
+            if (customIconContent != null) {
+                customIconContent()
+            } else if (iconPainter != null) {
                 Icon(
                     painter = iconPainter,
                     contentDescription = null,
@@ -243,7 +293,7 @@ private fun ProviderCard(
                 )
             }
 
-            Spacer(Modifier.width(12.dp))
+            Spacer(Modifier.width(16.dp))
 
             Column {
                 Text(
