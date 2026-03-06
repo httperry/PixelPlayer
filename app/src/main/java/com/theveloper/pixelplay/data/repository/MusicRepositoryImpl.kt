@@ -155,11 +155,11 @@ class MusicRepositoryImpl @Inject constructor(
 
     override suspend fun getRandomSongs(limit: Int): List<Song> = withContext(Dispatchers.IO) {
         // Use DAO's optimized random query with filter support
-        val allowed = userPreferencesRepository.allowedDirectoriesFlow.first()
-        val blocked = userPreferencesRepository.blockedDirectoriesFlow.first()
-        val applyFilter = blocked.isNotEmpty()
-        
-        musicDao.getRandomSongs(limit, allowed.toList(), applyFilter).map { it.toSong() }
+        val allowedDirs = userPreferencesRepository.allowedDirectoriesFlow.first()
+        val blockedDirs = userPreferencesRepository.blockedDirectoriesFlow.first()
+        val (allowedParentDirs, applyFilter) = computeAllowedDirs(allowedDirs, blockedDirs)
+
+        musicDao.getRandomSongs(limit, allowedParentDirs, applyFilter).map { it.toSong() }
     }
 
     override suspend fun saveTelegramSongs(songs: List<Song>) {

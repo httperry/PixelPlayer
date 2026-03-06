@@ -837,18 +837,7 @@ class PlayerViewModel @Inject constructor(
 
     fun shuffleAllSongs() {
         Log.d("ShuffleDebug", "shuffleAllSongs called.")
-        // Don't use ExoPlayer's shuffle mode - we manually shuffle instead
-        val currentSong = playbackStateHolder.stablePlayerState.value.currentSong
-        val isPlaying = playbackStateHolder.stablePlayerState.value.isPlaying
-
-        // If something is playing, just toggle shuffle on current queue
-        if (currentSong != null && isPlaying) {
-            if (!playbackStateHolder.stablePlayerState.value.isShuffleEnabled) {
-                toggleShuffle()
-            }
-            return
-        }
-
+        
         // Load random songs from DB instead of materializing the entire library
         viewModelScope.launch {
             val randomSongs = musicRepository.getRandomSongs(limit = 500)
@@ -918,17 +907,6 @@ class PlayerViewModel @Inject constructor(
 
     fun shuffleFavoriteSongs() {
         Log.d("ShuffleDebug", "shuffleFavoriteSongs called.")
-        // Don't use ExoPlayer's shuffle mode - we manually shuffle instead
-        val currentSong = playbackStateHolder.stablePlayerState.value.currentSong
-        val isPlaying = playbackStateHolder.stablePlayerState.value.isPlaying
-
-        // If something is playing, just toggle shuffle on current queue
-        if (currentSong != null && isPlaying) {
-            if (!playbackStateHolder.stablePlayerState.value.isShuffleEnabled) {
-                toggleShuffle()
-            }
-            return
-        }
 
         // Load favorite songs from DB on-demand instead of holding them in memory
         viewModelScope.launch {
