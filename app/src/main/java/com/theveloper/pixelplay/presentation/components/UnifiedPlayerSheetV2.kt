@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.ui.layout.layout
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
@@ -323,12 +324,12 @@ fun UnifiedPlayerSheetV2(
         swipeDismissProgress = swipeDismissProgress
     )
     val currentBottomPadding = sheetVisualState.currentBottomPadding
-    val playerContentAreaHeightDp = sheetVisualState.playerContentAreaHeightDp
+    val playerContentAreaHeightPxProvider = sheetVisualState.playerContentAreaHeightPxProvider
     val visualSheetTranslationY = sheetVisualState.visualSheetTranslationY
     val overallSheetTopCornerRadius = sheetVisualState.overallSheetTopCornerRadius
     val playerContentActualBottomRadius = sheetVisualState.playerContentActualBottomRadius
-    val currentHorizontalPaddingStart = sheetVisualState.currentHorizontalPaddingStart
-    val currentHorizontalPaddingEnd = sheetVisualState.currentHorizontalPaddingEnd
+    val currentHorizontalPaddingStartPxProvider = sheetVisualState.currentHorizontalPaddingStartPxProvider
+    val currentHorizontalPaddingEndPxProvider = sheetVisualState.currentHorizontalPaddingEndPxProvider
 
     val queueSheetState = rememberQueueSheetState(
         scope = scope,
@@ -528,15 +529,34 @@ fun UnifiedPlayerSheetV2(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
+                            // Modifier.layout reads from pixel lambdas during the layout phase —
+                            // this avoids recomposition per drag frame (unlike derivedStateOf).
+                            // Layout still runs per-frame, but composition is skipped entirely.
+                            .layout { measurable, constraints ->
+                                val targetHeightPx = playerContentAreaHeightPxProvider()
+                                    .toInt().coerceAtLeast(0)
+                                val startPaddingPx = currentHorizontalPaddingStartPxProvider()
+                                    .toInt().coerceAtLeast(0)
+                                val endPaddingPx = currentHorizontalPaddingEndPxProvider()
+                                    .toInt().coerceAtLeast(0)
+                                val innerWidth = (constraints.maxWidth - startPaddingPx - endPaddingPx)
+                                    .coerceAtLeast(0)
+                                val placeable = measurable.measure(
+                                    constraints.copy(
+                                        minWidth = innerWidth,
+                                        maxWidth = innerWidth,
+                                        minHeight = targetHeightPx,
+                                        maxHeight = targetHeightPx
+                                    )
+                                )
+                                layout(constraints.maxWidth, targetHeightPx) {
+                                    placeable.place(startPaddingPx, 0)
+                                }
+                            }
                             .miniPlayerDismissHorizontalGesture(
                                 enabled = currentSheetContentState == PlayerSheetState.COLLAPSED,
                                 handler = miniDismissGestureHandler
                             )
-                            .padding(
-                                start = currentHorizontalPaddingStart,
-                                end = currentHorizontalPaddingEnd
-                            )
-                            .height(playerContentAreaHeightDp)
                             .graphicsLayer {
                                 translationX = offsetAnimatable.value
                                 scaleX = miniAppearScale

@@ -125,6 +125,13 @@ android {
     }
 }
 
+composeCompiler {
+    // Applies Compose's strong skipping optimization (skip composables whose parameters
+    // haven't changed) in Debug builds as well, making dev-mode performance more
+    // representative of Release and reducing unnecessary recompositions during development.
+    enableStrongSkippingMode = true
+}
+
 ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
     arg("room.incremental", "true")
