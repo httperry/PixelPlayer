@@ -377,7 +377,7 @@ class PlayerViewModel @Inject constructor(
     val navBarStyle: StateFlow<String> = userPreferencesRepository.navBarStyleFlow
         .stateIn(
             scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
+            started = SharingStarted.Eagerly,
             initialValue = NavBarStyle.DEFAULT
         )
 

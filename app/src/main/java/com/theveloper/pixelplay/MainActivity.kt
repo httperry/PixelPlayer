@@ -580,6 +580,7 @@ class MainActivity : ComponentActivity() {
         }
 
         val navBarStyle by playerViewModel.navBarStyle.collectAsStateWithLifecycle()
+        val navBarCornerRadius by playerViewModel.navBarCornerRadius.collectAsStateWithLifecycle()
         val hapticsEnabled by playerViewModel.hapticsEnabled.collectAsStateWithLifecycle()
         val rootView = LocalView.current
         val platformHapticFeedback = LocalHapticFeedback.current
@@ -665,7 +666,6 @@ class MainActivity : ComponentActivity() {
                                 .distinctUntilChanged()
                         }.collectAsStateWithLifecycle(initialValue = null)
                         val showPlayerContentArea = currentSongId != null
-                        val navBarCornerRadius by playerViewModel.navBarCornerRadius.collectAsStateWithLifecycle()
                         val navBarElevation = 3.dp
 
                         val playerContentActualBottomRadiusTargetValue by remember(
@@ -702,8 +702,14 @@ class MainActivity : ComponentActivity() {
                         val navBarHideFraction = if (showPlayerContentArea) playerContentExpansionFraction else 0f
                         val navBarHideFractionClamped = navBarHideFraction.coerceIn(0f, 1f)
 
-                        val actualShape = remember(playerContentActualBottomRadius, showPlayerContentArea, navBarStyle, navBarCornerRadius) {
-                            val bottomRadius = if (navBarStyle == NavBarStyle.FULL_WIDTH) 0.dp else navBarCornerRadius.dp
+                        val animatedNavBarCornerRadius by animateDpAsState(
+                            targetValue = navBarCornerRadius.dp,
+                            animationSpec = tween(400),
+                            label = "NavBarCornerRadius"
+                        )
+
+                        val actualShape = remember(playerContentActualBottomRadius, showPlayerContentArea, navBarStyle, animatedNavBarCornerRadius) {
+                            val bottomRadius = if (navBarStyle == NavBarStyle.FULL_WIDTH) 0.dp else animatedNavBarCornerRadius
                             AbsoluteSmoothCornerShape(
                                 cornerRadiusTL = playerContentActualBottomRadius,
                                 smoothnessAsPercentBR = 60,
@@ -716,7 +722,12 @@ class MainActivity : ComponentActivity() {
                             )
                         }
 
-                        val bottomBarPadding = if (navBarStyle == NavBarStyle.FULL_WIDTH) 0.dp else systemNavBarInset
+                        val animatedBottomBarPadding by animateDpAsState(
+                            targetValue = if (navBarStyle == NavBarStyle.FULL_WIDTH) 0.dp else systemNavBarInset,
+                            animationSpec = tween(400),
+                            label = "BottomBarPadding"
+                        )
+                        val bottomBarPadding = animatedBottomBarPadding
 
                         var componentHeightPx by remember { mutableStateOf(0) }
                         val density = LocalDensity.current

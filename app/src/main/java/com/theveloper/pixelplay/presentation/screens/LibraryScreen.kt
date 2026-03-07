@@ -2158,9 +2158,24 @@ fun LibraryNavigationPill(
                     AnimatedContent(
                         targetState = PillState(pageIndex = pageIndex, iconRes = iconRes, title = title),
                         transitionSpec = {
-                            val direction = targetState.pageIndex.compareTo(initialState.pageIndex).coerceIn(-1, 1)
-                            val slideIn = slideInHorizontally { fullWidth -> if (direction >= 0) fullWidth else -fullWidth } + fadeIn()
-                            val slideOut = slideOutHorizontally { fullWidth -> if (direction >= 0) -fullWidth else fullWidth } + fadeOut()
+                            // Calculate direction based on shortest path for potentially infinite/large page indices
+                            val diff = targetState.pageIndex - initialState.pageIndex
+                            val direction = when {
+                                diff == 0 -> 0
+                                // If the absolute difference is very large, it's likely a wrap-around or a direct jump
+                                // We treat jumps as "forward" if positive, but we could also check a threshold
+                                abs(diff) > 1 -> diff.coerceIn(-1, 1) 
+                                else -> diff
+                            }
+                            
+                            val slideIn = slideInHorizontally { fullWidth -> 
+                                if (direction >= 0) fullWidth else -fullWidth 
+                            } + fadeIn(animationSpec = tween(220))
+                            
+                            val slideOut = slideOutHorizontally { fullWidth -> 
+                                if (direction >= 0) -fullWidth else fullWidth 
+                            } + fadeOut(animationSpec = tween(220))
+                            
                             slideIn.togetherWith(slideOut)
                         },
                         label = "LibraryPillTitle"

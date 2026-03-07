@@ -93,10 +93,13 @@ fun LibraryAlbumsTab(
         if (currentSortKey == lastHandledAlbumSortKey) return@LaunchedEffect
         lastHandledAlbumSortKey = currentSortKey
         pendingAlbumSortScrollReset = true
+        
+        // Minor delay to ensure items are rearranged before resetting scroll position
+        kotlinx.coroutines.delay(100) 
         if (isListView) {
-            listState.scrollToItem(0)
+            listState.animateScrollToItem(0)
         } else {
-            gridState.scrollToItem(0)
+            gridState.animateScrollToItem(0)
         }
     }
 
