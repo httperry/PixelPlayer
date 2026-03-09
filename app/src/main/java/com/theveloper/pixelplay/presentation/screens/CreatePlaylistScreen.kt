@@ -794,6 +794,7 @@ fun EditPlaylistContent(
              onStarRotationChange = { starRotation = it },
              starScale = starScale,
              onStarScaleChange = { starScale = it },
+             showCreationModeSelector = false,
              creationMode = PlaylistCreationMode.MANUAL,
              onCreationModeChange = { },
              selectedSmartRule = SmartPlaylistRule.TOP_PLAYED,
@@ -837,6 +838,7 @@ private fun PlaylistFormContent(
     onStarRotationChange: (Float) -> Unit,
     starScale: Float,
     onStarScaleChange: (Float) -> Unit,
+    showCreationModeSelector: Boolean = true,
     creationMode: PlaylistCreationMode,
     onCreationModeChange: (PlaylistCreationMode) -> Unit,
     selectedSmartRule: SmartPlaylistRule,
@@ -1065,24 +1067,26 @@ private fun PlaylistFormContent(
             
             Spacer(modifier = Modifier.height(8.dp))
 
-            SingleChoiceSegmentedButtonRow(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 22.dp)
-            ) {
-                SegmentedButton(
-                    selected = creationMode == PlaylistCreationMode.MANUAL,
-                    onClick = { onCreationModeChange(PlaylistCreationMode.MANUAL) },
-                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
+            if (showCreationModeSelector) {
+                SingleChoiceSegmentedButtonRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 22.dp)
                 ) {
-                    Text("Manual")
-                }
-                SegmentedButton(
-                    selected = creationMode == PlaylistCreationMode.SMART,
-                    onClick = { onCreationModeChange(PlaylistCreationMode.SMART) },
-                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
-                ) {
-                    Text("Smart")
+                    SegmentedButton(
+                        selected = creationMode == PlaylistCreationMode.MANUAL,
+                        onClick = { onCreationModeChange(PlaylistCreationMode.MANUAL) },
+                        shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
+                    ) {
+                        Text("Manual")
+                    }
+                    SegmentedButton(
+                        selected = creationMode == PlaylistCreationMode.SMART,
+                        onClick = { onCreationModeChange(PlaylistCreationMode.SMART) },
+                        shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
+                    ) {
+                        Text("Smart")
+                    }
                 }
             }
 
