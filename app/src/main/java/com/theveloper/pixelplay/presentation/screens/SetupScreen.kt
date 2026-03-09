@@ -689,7 +689,7 @@ fun WelcomePage() {
         ){
             MaterialYouVectorDrawable(
                 modifier = Modifier.fillMaxSize(),
-                painter = painterResource(R.drawable.welcome_art)
+                drawableResId = R.drawable.welcome_art
             )
             SineWaveLine(
                 modifier = Modifier
