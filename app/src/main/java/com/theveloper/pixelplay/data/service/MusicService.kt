@@ -252,8 +252,8 @@ class MusicService : MediaLibraryService() {
         initializeCastWearSync()
         registerHeadsetReconnectMonitor()
 
-        // Restore equalizer state from preferences and attach to audio session.
-        // This ensures the equalizer is active even before the user opens the EQ screen.
+        // Restore equalizer state from preferences and only attach audio effects when
+        // the user actually has at least one effect enabled for the current session.
         serviceScope.launch {
             val eqEnabled = equalizerPreferencesRepository.equalizerEnabledFlow.first()
             val presetName = equalizerPreferencesRepository.equalizerPresetFlow.first()
@@ -274,13 +274,13 @@ class MusicService : MediaLibraryService() {
 
             val sessionId = engine.getAudioSessionId()
             if (sessionId != 0) {
-                equalizerManager.attachToAudioSession(sessionId)
+                equalizerManager.attachToAudioSessionIfNeeded(sessionId)
             }
 
             // Re-attach equalizer whenever the active audio session changes (e.g. crossfade)
             engine.activeAudioSessionId.collect { newSessionId ->
                 if (newSessionId != 0) {
-                    equalizerManager.attachToAudioSession(newSessionId)
+                    equalizerManager.attachToAudioSessionIfNeeded(newSessionId)
                 }
             }
         }

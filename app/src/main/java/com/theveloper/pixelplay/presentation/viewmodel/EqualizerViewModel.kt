@@ -145,7 +145,7 @@ class EqualizerViewModel @Inject constructor(
                 
                 val initialSessionId = dualPlayerEngine.getAudioSessionId()
                 if (initialSessionId != 0) {
-                    equalizerManager.attachToAudioSession(initialSessionId)
+                    equalizerManager.attachToAudioSessionIfNeeded(initialSessionId)
                 }
             } else {
                 Timber.tag(TAG).d("Equalizer already attached by service, skipping restore.")
@@ -264,6 +264,7 @@ class EqualizerViewModel @Inject constructor(
             current.copy(isEnabled = enabled)
         }
         viewModelScope.launch {
+            equalizerManager.attachToAudioSessionIfNeeded(dualPlayerEngine.getAudioSessionId())
             equalizerPreferencesRepository.setEqualizerEnabled(enabled)
         }
     }
@@ -360,6 +361,7 @@ class EqualizerViewModel @Inject constructor(
             current.copy(bassBoostEnabled = enabled)
         }
         viewModelScope.launch {
+            equalizerManager.attachToAudioSessionIfNeeded(dualPlayerEngine.getAudioSessionId())
             equalizerPreferencesRepository.setBassBoostEnabled(enabled)
         }
     }
@@ -384,6 +386,7 @@ class EqualizerViewModel @Inject constructor(
             current.copy(virtualizerEnabled = enabled)
         }
         viewModelScope.launch {
+            equalizerManager.attachToAudioSessionIfNeeded(dualPlayerEngine.getAudioSessionId())
             equalizerPreferencesRepository.setVirtualizerEnabled(enabled)
         }
     }
@@ -408,6 +411,7 @@ class EqualizerViewModel @Inject constructor(
             current.copy(loudnessEnhancerEnabled = enabled)
         }
         viewModelScope.launch {
+            equalizerManager.attachToAudioSessionIfNeeded(dualPlayerEngine.getAudioSessionId())
             equalizerPreferencesRepository.setLoudnessEnhancerEnabled(enabled)
         }
     }
@@ -478,7 +482,7 @@ class EqualizerViewModel @Inject constructor(
         viewModelScope.launch {
             val audioSessionId = dualPlayerEngine.getAudioSessionId()
             Timber.tag(TAG).d("Reattaching equalizer to new audio session: $audioSessionId")
-            equalizerManager.attachToAudioSession(audioSessionId)
+            equalizerManager.attachToAudioSessionIfNeeded(audioSessionId)
         }
     }
     
