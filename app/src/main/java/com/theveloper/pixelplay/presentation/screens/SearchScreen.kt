@@ -185,8 +185,17 @@ fun SearchScreen(
     val gradientBrush = remember(gradientColors) {
         Brush.verticalGradient(colors = gradientColors)
     }
-
     val colorScheme = MaterialTheme.colorScheme
+    val bottomGradientBrush = remember(colorScheme.surfaceContainerLowest) {
+        Brush.verticalGradient(
+            colorStops = arrayOf(
+                0.0f to Color.Transparent,
+                0.2f to Color.Transparent,
+                0.8f to colorScheme.surfaceContainerLowest,
+                1.0f to colorScheme.surfaceContainerLowest
+            )
+        )
+    }
 
     DisposableEffect(Unit) {
         onDispose {
@@ -314,35 +323,17 @@ fun SearchScreen(
                 label = "search_mode_transition"
             ) { isGenreMode ->
                 if (isGenreMode) {
-                    Box(modifier = Modifier.fillMaxSize()) {
-                        GenreCategoriesGrid(
-                            genres = genres,
-                            onGenreClick = { genre ->
-                                Timber.tag("SearchScreen")
-                                    .d("Genre clicked: ${genre.name} (ID: ${genre.id})")
-                                val encodedGenreId = java.net.URLEncoder.encode(genre.id, "UTF-8")
-                                navController.navigateSafely(Screen.GenreDetail.createRoute(encodedGenreId))
-                            },
-                            playerViewModel = playerViewModel,
-                            modifier = Modifier.padding(top = 12.dp)
-                        )
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .align(Alignment.BottomCenter)
-                                .height(170.dp)
-                                .background(
-                                    brush = Brush.verticalGradient(
-                                        colorStops = arrayOf(
-                                            0.0f to Color.Transparent,
-                                            0.2f to Color.Transparent,
-                                            0.8f to MaterialTheme.colorScheme.surfaceContainerLowest,
-                                            1.0f to MaterialTheme.colorScheme.surfaceContainerLowest
-                                        )
-                                    )
-                                )
-                        )
-                    }
+                    GenreCategoriesGrid(
+                        genres = genres,
+                        onGenreClick = { genre ->
+                            Timber.tag("SearchScreen")
+                                .d("Genre clicked: ${genre.name} (ID: ${genre.id})")
+                            val encodedGenreId = java.net.URLEncoder.encode(genre.id, "UTF-8")
+                            navController.navigateSafely(Screen.GenreDetail.createRoute(encodedGenreId))
+                        },
+                        playerViewModel = playerViewModel,
+                        modifier = Modifier.padding(top = 12.dp)
+                    )
                 } else {
                     Column(
                         modifier = Modifier
@@ -392,6 +383,14 @@ fun SearchScreen(
                 }
             }
         }
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .align(Alignment.BottomCenter)
+                .height(170.dp)
+                .background(brush = bottomGradientBrush)
+        )
     }
 
     if (showSongInfoBottomSheet && selectedSongForInfo != null) {
