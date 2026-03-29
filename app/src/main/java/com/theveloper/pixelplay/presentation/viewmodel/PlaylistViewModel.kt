@@ -139,12 +139,7 @@ class PlaylistViewModel @Inject constructor(
             playlistPreferencesRepository.userPlaylistsFlow.collect { playlists ->
                 val currentSortOption =
                     _uiState.value.currentPlaylistSortOption // Use the most up-to-date sort option
-                val sortedPlaylists = when (currentSortOption) {
-                    SortOption.PlaylistNameAZ -> playlists.sortedBy { it.name.lowercase() }
-                    SortOption.PlaylistNameZA -> playlists.sortedByDescending { it.name.lowercase() }
-                    SortOption.PlaylistDateCreated -> playlists.sortedByDescending { it.lastModified }
-                    else -> playlists.sortedBy { it.name.lowercase() } // Default to NameAZ
-                }
+                val sortedPlaylists = sortPlaylistsList(playlists, currentSortOption)
                 _uiState.update { it.copy(playlists = sortedPlaylists) }
             }
         }
@@ -813,15 +808,14 @@ class PlaylistViewModel @Inject constructor(
 
     //Sort funs
     fun sortPlaylists(sortOption: SortOption) {
+        if (_uiState.value.currentPlaylistSortOption.storageKey == sortOption.storageKey) {
+            return
+        }
+
         _uiState.update { it.copy(currentPlaylistSortOption = sortOption) }
 
         val currentPlaylists = _uiState.value.playlists
-        val sortedPlaylists = when (sortOption) {
-            SortOption.PlaylistNameAZ -> currentPlaylists.sortedBy { it.name.lowercase() }
-            SortOption.PlaylistNameZA -> currentPlaylists.sortedByDescending { it.name.lowercase() }
-            SortOption.PlaylistDateCreated -> currentPlaylists.sortedByDescending { it.lastModified }
-            else -> currentPlaylists
-        }.toList()
+        val sortedPlaylists = sortPlaylistsList(currentPlaylists, sortOption)
 
         _uiState.update { it.copy(playlists = sortedPlaylists) }
 
@@ -859,15 +853,7 @@ class PlaylistViewModel @Inject constructor(
         }
 
         val currentSongs = _uiState.value.currentPlaylistSongs
-        val sortedSongs = when (sortOption) {
-            SortOption.SongTitleAZ -> currentSongs.sortedBy { it.title.lowercase() }
-            SortOption.SongTitleZA -> currentSongs.sortedByDescending { it.title.lowercase() }
-            SortOption.SongArtist -> currentSongs.sortedBy { it.artist.lowercase() }
-            SortOption.SongAlbum -> currentSongs.sortedBy { it.album.lowercase() }
-            SortOption.SongDuration -> currentSongs.sortedBy { it.duration }
-            SortOption.SongDateAdded -> currentSongs.sortedByDescending { it.dateAdded }
-            else -> currentSongs
-        }
+        val sortedSongs = sortSongsList(currentSongs, sortOption)
 
         _uiState.update {
             val updatedModes = if (playlistId != null) {
@@ -919,13 +905,97 @@ class PlaylistViewModel @Inject constructor(
     }
 
     private fun applySortToSongs(songs: List<Song>, sortOption: SortOption): List<Song> {
+        return sortSongsList(songs, sortOption)
+    }
+
+    private fun sortPlaylistsList(
+        playlists: List<com.theveloper.pixelplay.data.model.Playlist>,
+        sortOption: SortOption
+    ): List<com.theveloper.pixelplay.data.model.Playlist> {
         return when (sortOption) {
-            SortOption.SongTitleAZ -> songs.sortedBy { it.title.lowercase() }
-            SortOption.SongTitleZA -> songs.sortedByDescending { it.title.lowercase() }
-            SortOption.SongArtist -> songs.sortedBy { it.artist.lowercase() }
-            SortOption.SongAlbum -> songs.sortedBy { it.album.lowercase() }
-            SortOption.SongDuration -> songs.sortedBy { it.duration }
-            SortOption.SongDateAdded -> songs.sortedByDescending { it.dateAdded }
+            SortOption.PlaylistNameAZ -> playlists.sortedWith(
+                compareBy<com.theveloper.pixelplay.data.model.Playlist> { it.name.lowercase() }
+                    .thenByDescending { it.lastModified }
+                    .thenBy { it.id }
+            )
+            SortOption.PlaylistNameZA -> playlists.sortedWith(
+                compareByDescending<com.theveloper.pixelplay.data.model.Playlist> { it.name.lowercase() }
+                    .thenByDescending { it.lastModified }
+                    .thenBy { it.id }
+            )
+            SortOption.PlaylistDateCreated -> playlists.sortedWith(
+                compareByDescending<com.theveloper.pixelplay.data.model.Playlist> { it.lastModified }
+                    .thenBy { it.name.lowercase() }
+                    .thenBy { it.id }
+            )
+            SortOption.PlaylistDateCreatedAsc -> playlists.sortedWith(
+                compareBy<com.theveloper.pixelplay.data.model.Playlist> { it.lastModified }
+                    .thenBy { it.name.lowercase() }
+                    .thenBy { it.id }
+            )
+            else -> playlists.sortedWith(
+                compareBy<com.theveloper.pixelplay.data.model.Playlist> { it.name.lowercase() }
+                    .thenByDescending { it.lastModified }
+                    .thenBy { it.id }
+            )
+        }
+    }
+
+    private fun sortSongsList(
+        songs: List<Song>,
+        sortOption: SortOption
+    ): List<Song> {
+        return when (sortOption) {
+            SortOption.SongTitleAZ -> songs.sortedWith(
+                compareBy<Song> { it.title.lowercase() }
+                    .thenBy { it.artist.lowercase() }
+                    .thenBy { it.id }
+            )
+            SortOption.SongTitleZA -> songs.sortedWith(
+                compareByDescending<Song> { it.title.lowercase() }
+                    .thenBy { it.artist.lowercase() }
+                    .thenBy { it.id }
+            )
+            SortOption.SongArtist -> songs.sortedWith(
+                compareBy<Song> { it.artist.lowercase() }
+                    .thenBy { it.title.lowercase() }
+                    .thenBy { it.id }
+            )
+            SortOption.SongArtistDesc -> songs.sortedWith(
+                compareByDescending<Song> { it.artist.lowercase() }
+                    .thenBy { it.title.lowercase() }
+                    .thenBy { it.id }
+            )
+            SortOption.SongAlbum -> songs.sortedWith(
+                compareBy<Song> { it.album.lowercase() }
+                    .thenBy { it.title.lowercase() }
+                    .thenBy { it.id }
+            )
+            SortOption.SongAlbumDesc -> songs.sortedWith(
+                compareByDescending<Song> { it.album.lowercase() }
+                    .thenBy { it.title.lowercase() }
+                    .thenBy { it.id }
+            )
+            SortOption.SongDuration -> songs.sortedWith(
+                compareByDescending<Song> { it.duration }
+                    .thenBy { it.title.lowercase() }
+                    .thenBy { it.id }
+            )
+            SortOption.SongDurationAsc -> songs.sortedWith(
+                compareBy<Song> { it.duration }
+                    .thenBy { it.title.lowercase() }
+                    .thenBy { it.id }
+            )
+            SortOption.SongDateAdded -> songs.sortedWith(
+                compareByDescending<Song> { it.dateAdded }
+                    .thenBy { it.title.lowercase() }
+                    .thenBy { it.id }
+            )
+            SortOption.SongDateAddedAsc -> songs.sortedWith(
+                compareBy<Song> { it.dateAdded }
+                    .thenBy { it.title.lowercase() }
+                    .thenBy { it.id }
+            )
             else -> songs
         }
     }

@@ -252,6 +252,7 @@ private const val FOLDER_NAVIGATION_ROOT_KEY = "__folder_root__"
 private const val FOLDER_NAVIGATION_FORWARD = 1
 private const val FOLDER_NAVIGATION_BACKWARD = -1
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun WatchTransferProgressDialog(
     transfer: PhoneWatchTransferState,
@@ -1228,6 +1229,9 @@ fun LibraryScreen(
                                 onOptionSelected = { option ->
                                     onSortOptionChanged(option)
                                     playerViewModel.hideSortingSheet()
+                                },
+                                onDirectionToggle = { option ->
+                                    onSortOptionChanged(option)
                                 },
                                 showViewToggle = isFoldersTab || isPlaylistsTab,
                                 viewSectionTitle = if (isPlaylistsTab) "Cloud" else "View",
@@ -2911,28 +2915,53 @@ private fun flattenFolders(folders: List<MusicFolder>): List<MusicFolder> {
 
 private fun sortMusicFoldersByOption(folders: List<MusicFolder>, sortOption: SortOption): List<MusicFolder> {
     return when (sortOption) {
-        SortOption.FolderNameAZ -> folders.sortedBy { it.name.lowercase() }
-        SortOption.FolderNameZA -> folders.sortedByDescending { it.name.lowercase() }
+        SortOption.FolderNameAZ -> folders.sortedWith(
+            compareBy<MusicFolder> { it.name.lowercase() }
+                .thenBy { it.path }
+        )
+        SortOption.FolderNameZA -> folders.sortedWith(
+            compareByDescending<MusicFolder> { it.name.lowercase() }
+                .thenBy { it.path }
+        )
         SortOption.FolderSongCountAsc -> folders.sortedWith(
-            compareBy<MusicFolder> { it.totalSongCount }.thenBy { it.name.lowercase() }
+            compareBy<MusicFolder> { it.totalSongCount }
+                .thenBy { it.name.lowercase() }
+                .thenBy { it.path }
         )
         SortOption.FolderSongCountDesc -> folders.sortedWith(
-            compareByDescending<MusicFolder> { it.totalSongCount }.thenBy { it.name.lowercase() }
+            compareByDescending<MusicFolder> { it.totalSongCount }
+                .thenBy { it.name.lowercase() }
+                .thenBy { it.path }
         )
         SortOption.FolderSubdirCountAsc -> folders.sortedWith(
-            compareBy<MusicFolder> { it.totalSubFolderCount }.thenBy { it.name.lowercase() }
+            compareBy<MusicFolder> { it.totalSubFolderCount }
+                .thenBy { it.name.lowercase() }
+                .thenBy { it.path }
         )
         SortOption.FolderSubdirCountDesc -> folders.sortedWith(
-            compareByDescending<MusicFolder> { it.totalSubFolderCount }.thenBy { it.name.lowercase() }
+            compareByDescending<MusicFolder> { it.totalSubFolderCount }
+                .thenBy { it.name.lowercase() }
+                .thenBy { it.path }
         )
-        else -> folders.sortedBy { it.name.lowercase() }
+        else -> folders.sortedWith(
+            compareBy<MusicFolder> { it.name.lowercase() }
+                .thenBy { it.path }
+        )
     }
 }
 
 private fun sortSongsForFolderView(songs: List<Song>, sortOption: SortOption): List<Song> {
     return when (sortOption) {
-        SortOption.FolderNameZA -> songs.sortedByDescending { it.title.lowercase() }
-        else -> songs.sortedBy { it.title.lowercase() }
+        SortOption.FolderNameZA -> songs.sortedWith(
+            compareByDescending<Song> { it.title.lowercase() }
+                .thenBy { it.artist.lowercase() }
+                .thenBy { it.id }
+        )
+        else -> songs.sortedWith(
+            compareBy<Song> { it.title.lowercase() }
+                .thenBy { it.artist.lowercase() }
+                .thenBy { it.id }
+        )
     }
 }
 
