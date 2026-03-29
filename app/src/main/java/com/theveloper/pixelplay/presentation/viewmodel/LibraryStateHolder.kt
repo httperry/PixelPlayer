@@ -302,6 +302,9 @@ class LibraryStateHolder @Inject constructor(
 
     fun sortSongs(sortOption: SortOption, persist: Boolean = true) {
         scope?.launch {
+            if (persist && _currentSongSortOption.value.storageKey == sortOption.storageKey) {
+                return@launch
+            }
             if (persist) {
                 userPreferencesRepository.setSongsSortOption(sortOption.storageKey)
             }
@@ -312,18 +315,55 @@ class LibraryStateHolder @Inject constructor(
 
     fun sortAlbums(sortOption: SortOption, persist: Boolean = true) {
         scope?.launch {
+            if (persist && _currentAlbumSortOption.value.storageKey == sortOption.storageKey) {
+                return@launch
+            }
             if (persist) {
                 userPreferencesRepository.setAlbumsSortOption(sortOption.storageKey)
             }
             _currentAlbumSortOption.value = sortOption
 
             val sorted = when (sortOption) {
-                SortOption.AlbumTitleAZ -> _albums.value.sortedBy { it.title.lowercase() }
-                SortOption.AlbumTitleZA -> _albums.value.sortedByDescending { it.title.lowercase() }
-                SortOption.AlbumArtist -> _albums.value.sortedBy { it.artist.lowercase() }
-                SortOption.AlbumReleaseYear -> _albums.value.sortedByDescending { it.year }
-                SortOption.AlbumSizeAsc -> _albums.value.sortedWith(compareBy<Album> { it.songCount }.thenBy { it.title.lowercase() })
-                SortOption.AlbumSizeDesc -> _albums.value.sortedWith(compareByDescending<Album> { it.songCount }.thenBy { it.title.lowercase() })
+                SortOption.AlbumTitleAZ -> _albums.value.sortedWith(
+                    compareBy<Album> { it.title.lowercase() }
+                        .thenBy { it.artist.lowercase() }
+                        .thenBy { it.id }
+                )
+                SortOption.AlbumTitleZA -> _albums.value.sortedWith(
+                    compareByDescending<Album> { it.title.lowercase() }
+                        .thenBy { it.artist.lowercase() }
+                        .thenBy { it.id }
+                )
+                SortOption.AlbumArtist -> _albums.value.sortedWith(
+                    compareBy<Album> { it.artist.lowercase() }
+                        .thenBy { it.title.lowercase() }
+                        .thenBy { it.id }
+                )
+                SortOption.AlbumArtistDesc -> _albums.value.sortedWith(
+                    compareByDescending<Album> { it.artist.lowercase() }
+                        .thenBy { it.title.lowercase() }
+                        .thenBy { it.id }
+                )
+                SortOption.AlbumReleaseYear -> _albums.value.sortedWith(
+                    compareByDescending<Album> { it.year }
+                        .thenBy { it.title.lowercase() }
+                        .thenBy { it.id }
+                )
+                SortOption.AlbumReleaseYearAsc -> _albums.value.sortedWith(
+                    compareBy<Album> { it.year }
+                        .thenBy { it.title.lowercase() }
+                        .thenBy { it.id }
+                )
+                SortOption.AlbumSizeAsc -> _albums.value.sortedWith(
+                    compareBy<Album> { it.songCount }
+                        .thenBy { it.title.lowercase() }
+                        .thenBy { it.id }
+                )
+                SortOption.AlbumSizeDesc -> _albums.value.sortedWith(
+                    compareByDescending<Album> { it.songCount }
+                        .thenBy { it.title.lowercase() }
+                        .thenBy { it.id }
+                )
                 else -> _albums.value
             }
             _albums.value = sorted.toImmutableList()
@@ -332,14 +372,23 @@ class LibraryStateHolder @Inject constructor(
 
     fun sortArtists(sortOption: SortOption, persist: Boolean = true) {
         scope?.launch {
+            if (persist && _currentArtistSortOption.value.storageKey == sortOption.storageKey) {
+                return@launch
+            }
             if (persist) {
                 userPreferencesRepository.setArtistsSortOption(sortOption.storageKey)
             }
             _currentArtistSortOption.value = sortOption
 
             val sorted = when (sortOption) {
-                SortOption.ArtistNameAZ -> _artists.value.sortedBy { it.name.lowercase() }
-                SortOption.ArtistNameZA -> _artists.value.sortedByDescending { it.name.lowercase() }
+                SortOption.ArtistNameAZ -> _artists.value.sortedWith(
+                    compareBy<Artist> { it.name.lowercase() }
+                        .thenBy { it.id }
+                )
+                SortOption.ArtistNameZA -> _artists.value.sortedWith(
+                    compareByDescending<Artist> { it.name.lowercase() }
+                        .thenBy { it.id }
+                )
                 else -> _artists.value
             }
             _artists.value = sorted.toImmutableList()
@@ -348,25 +397,42 @@ class LibraryStateHolder @Inject constructor(
 
     fun sortFolders(sortOption: SortOption, persist: Boolean = true) {
         scope?.launch {
+            if (persist && _currentFolderSortOption.value.storageKey == sortOption.storageKey) {
+                return@launch
+            }
             if (persist) {
                 userPreferencesRepository.setFoldersSortOption(sortOption.storageKey)
             }
             _currentFolderSortOption.value = sortOption
 
             val sorted = when (sortOption) {
-                SortOption.FolderNameAZ -> _musicFolders.value.sortedBy { it.name.lowercase() }
-                SortOption.FolderNameZA -> _musicFolders.value.sortedByDescending { it.name.lowercase() }
+                SortOption.FolderNameAZ -> _musicFolders.value.sortedWith(
+                    compareBy<MusicFolder> { it.name.lowercase() }
+                        .thenBy { it.path }
+                )
+                SortOption.FolderNameZA -> _musicFolders.value.sortedWith(
+                    compareByDescending<MusicFolder> { it.name.lowercase() }
+                        .thenBy { it.path }
+                )
                 SortOption.FolderSongCountAsc -> _musicFolders.value.sortedWith(
-                    compareBy<MusicFolder> { it.totalSongCount }.thenBy { it.name.lowercase() }
+                    compareBy<MusicFolder> { it.totalSongCount }
+                        .thenBy { it.name.lowercase() }
+                        .thenBy { it.path }
                 )
                 SortOption.FolderSongCountDesc -> _musicFolders.value.sortedWith(
-                    compareByDescending<MusicFolder> { it.totalSongCount }.thenBy { it.name.lowercase() }
+                    compareByDescending<MusicFolder> { it.totalSongCount }
+                        .thenBy { it.name.lowercase() }
+                        .thenBy { it.path }
                 )
                 SortOption.FolderSubdirCountAsc -> _musicFolders.value.sortedWith(
-                    compareBy<MusicFolder> { it.totalSubFolderCount }.thenBy { it.name.lowercase() }
+                    compareBy<MusicFolder> { it.totalSubFolderCount }
+                        .thenBy { it.name.lowercase() }
+                        .thenBy { it.path }
                 )
                 SortOption.FolderSubdirCountDesc -> _musicFolders.value.sortedWith(
-                    compareByDescending<MusicFolder> { it.totalSubFolderCount }.thenBy { it.name.lowercase() }
+                    compareByDescending<MusicFolder> { it.totalSubFolderCount }
+                        .thenBy { it.name.lowercase() }
+                        .thenBy { it.path }
                 )
                 else -> _musicFolders.value
             }
@@ -376,6 +442,9 @@ class LibraryStateHolder @Inject constructor(
 
     fun sortFavoriteSongs(sortOption: SortOption, persist: Boolean = true) {
         scope?.launch {
+            if (persist && _currentFavoriteSortOption.value.storageKey == sortOption.storageKey) {
+                return@launch
+            }
             if (persist) {
                 userPreferencesRepository.setLikedSongsSortOption(sortOption.storageKey)
             }

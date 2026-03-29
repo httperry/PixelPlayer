@@ -460,11 +460,15 @@ interface MusicDao {
             CASE WHEN :sortOrder = 'song_title_az' THEN title END ASC,
             CASE WHEN :sortOrder = 'song_title_za' THEN title END DESC,
             CASE WHEN :sortOrder = 'song_artist' THEN artist_name END ASC,
+            CASE WHEN :sortOrder = 'song_artist_desc' THEN artist_name END DESC,
             CASE WHEN :sortOrder = 'song_album' THEN album_name END ASC,
+            CASE WHEN :sortOrder = 'song_album_desc' THEN album_name END DESC,
             CASE WHEN :sortOrder = 'song_date_added' THEN date_added END DESC,
+            CASE WHEN :sortOrder = 'song_date_added_asc' THEN date_added END ASC,
             CASE WHEN :sortOrder = 'song_duration' THEN duration END DESC,
-            
-            title ASC
+            CASE WHEN :sortOrder = 'song_duration_asc' THEN duration END ASC,
+            title ASC,
+            id ASC
     """)
     suspend fun getSongIdsSorted(
         allowedParentDirs: List<String>,
@@ -507,12 +511,17 @@ interface MusicDao {
             CASE WHEN :sortOrder = 'song_title_az' THEN title END ASC,
             CASE WHEN :sortOrder = 'song_title_za' THEN title END DESC,
             CASE WHEN :sortOrder = 'song_artist' THEN artist_name END ASC,
+            CASE WHEN :sortOrder = 'song_artist_desc' THEN artist_name END DESC,
             CASE WHEN :sortOrder = 'song_album' THEN album_name END ASC,
+            CASE WHEN :sortOrder = 'song_album_desc' THEN album_name END DESC,
             CASE WHEN :sortOrder = 'song_date_added' THEN date_added END DESC,
+            CASE WHEN :sortOrder = 'song_date_added_asc' THEN date_added END ASC,
             CASE WHEN :sortOrder = 'song_duration' THEN duration END DESC,
-            
+            CASE WHEN :sortOrder = 'song_duration_asc' THEN duration END ASC,
+
             -- Secondary sort falls back to title for consistency
-            title ASC
+            title ASC,
+            id ASC
     """)
     fun getSongsPaginated(
         allowedParentDirs: List<String>,
@@ -555,9 +564,13 @@ interface MusicDao {
             CASE WHEN :sortOrder = 'liked_title_az' THEN songs.title END ASC,
             CASE WHEN :sortOrder = 'liked_title_za' THEN songs.title END DESC,
             CASE WHEN :sortOrder = 'liked_artist' THEN songs.artist_name END ASC,
+            CASE WHEN :sortOrder = 'liked_artist_desc' THEN songs.artist_name END DESC,
             CASE WHEN :sortOrder = 'liked_album' THEN songs.album_name END ASC,
+            CASE WHEN :sortOrder = 'liked_album_desc' THEN songs.album_name END DESC,
             CASE WHEN :sortOrder = 'liked_date_liked' THEN favorites.timestamp END DESC,
-            songs.title ASC
+            CASE WHEN :sortOrder = 'liked_date_liked_asc' THEN favorites.timestamp END ASC,
+            songs.title ASC,
+            songs.id ASC
     """)
     fun getFavoriteSongsPaginated(
         allowedParentDirs: List<String>,
