@@ -138,7 +138,8 @@ object AppModule {
             PixelPlayDatabase.MIGRATION_29_30,
             PixelPlayDatabase.MIGRATION_30_31,
             PixelPlayDatabase.MIGRATION_31_32,
-            PixelPlayDatabase.MIGRATION_32_33
+            PixelPlayDatabase.MIGRATION_32_33,
+            PixelPlayDatabase.MIGRATION_33_34
         )
             .addCallback(
                 object : RoomDatabase.Callback() {
@@ -368,9 +369,10 @@ object AppModule {
     fun provideSongMetadataEditor(
         @ApplicationContext context: Context,
         musicDao: MusicDao,
-        telegramDao: com.theveloper.pixelplay.data.database.TelegramDao
+        telegramDao: com.theveloper.pixelplay.data.database.TelegramDao,
+        userPreferencesRepository: UserPreferencesRepository
     ): SongMetadataEditor {
-        return SongMetadataEditor(context, musicDao, telegramDao)
+        return SongMetadataEditor(context, musicDao, telegramDao, userPreferencesRepository)
     }
 
     /**

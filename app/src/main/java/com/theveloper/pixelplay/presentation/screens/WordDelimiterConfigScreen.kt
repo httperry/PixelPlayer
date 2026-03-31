@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -27,7 +26,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.RestartAlt
@@ -36,16 +34,13 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.InputChip
 import androidx.compose.material3.InputChipDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -64,25 +59,20 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.lerp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
-import com.theveloper.pixelplay.R
 import com.theveloper.pixelplay.data.preferences.UserPreferencesRepository
 import com.theveloper.pixelplay.presentation.components.CollapsibleCommonTopBar
-import com.theveloper.pixelplay.presentation.components.ExpressiveTopBarContent
 import com.theveloper.pixelplay.presentation.viewmodel.ArtistSettingsViewModel
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun DelimiterConfigScreen(
+fun WordDelimiterConfigScreen(
     navController: NavController,
     viewModel: ArtistSettingsViewModel = hiltViewModel()
 ) {
@@ -167,7 +157,7 @@ fun DelimiterConfigScreen(
             contentPadding = PaddingValues(top = currentTopBarHeightDp + 8.dp, start = 16.dp, end = 16.dp, bottom = 100.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Current Delimiters
+            // Current Word Delimiters
             item {
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
@@ -178,7 +168,7 @@ fun DelimiterConfigScreen(
                         modifier = Modifier.padding(16.dp)
                     ) {
                         Text(
-                            text = "Current Delimiters",
+                            text = "Current Word Delimiters",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
@@ -187,40 +177,57 @@ fun DelimiterConfigScreen(
                         Spacer(modifier = Modifier.height(8.dp))
 
                         Text(
-                            text = "Tap a delimiter to remove it. At least one delimiter is required.",
+                            text = "These keywords split artist names when surrounded by spaces. Matched case-insensitively. Tap to remove.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
 
                         Spacer(modifier = Modifier.height(12.dp))
 
-                        FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(0.dp)
-                        ) {
-                            uiState.artistDelimiters.forEach { delimiter ->
-                                DelimiterChip(
-                                    delimiter = delimiter,
-                                    canRemove = uiState.artistDelimiters.size > 1,
-                                    onRemove = {
-                                        if (uiState.artistDelimiters.size > 1) {
-                                            viewModel.removeDelimiter(delimiter)
-                                        } else {
-                                            Toast.makeText(
-                                                context,
-                                                "At least one delimiter is required",
-                                                Toast.LENGTH_SHORT
-                                            ).show()
-                                        }
-                                    }
-                                )
+                        if (uiState.wordDelimiters.isEmpty()) {
+                            Text(
+                                text = "No word delimiters configured",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                            )
+                        } else {
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(0.dp)
+                            ) {
+                                uiState.wordDelimiters.forEach { delimiter ->
+                                    InputChip(
+                                        selected = true,
+                                        onClick = { viewModel.removeWordDelimiter(delimiter) },
+                                        label = {
+                                            Text(
+                                                text = delimiter,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                        },
+                                        trailingIcon = {
+                                            Icon(
+                                                imageVector = Icons.Rounded.Close,
+                                                contentDescription = "Remove",
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        },
+                                        colors = InputChipDefaults.inputChipColors(
+                                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                            selectedTrailingIconColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                        ),
+                                        border = null
+                                    )
+                                }
                             }
                         }
                     }
                 }
             }
 
-            // Add New Delimiter
+            // Add New Word Delimiter
             item {
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
@@ -231,7 +238,7 @@ fun DelimiterConfigScreen(
                         modifier = Modifier.padding(16.dp)
                     ) {
                         Text(
-                            text = "Add New Delimiter",
+                            text = "Add New Word Delimiter",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
@@ -248,7 +255,7 @@ fun DelimiterConfigScreen(
                                 onValueChange = { newDelimiter = it },
                                 placeholder = {
                                     Text(
-                                        text = "e.g., / or ;",
+                                        text = "e.g., feat. or ft.",
                                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                                     )
                                 },
@@ -257,21 +264,13 @@ fun DelimiterConfigScreen(
                                 keyboardActions = KeyboardActions(
                                     onDone = {
                                         if (newDelimiter.isNotBlank()) {
-                                            val success = viewModel.addDelimiter(newDelimiter)
+                                            val success = viewModel.addWordDelimiter(newDelimiter)
                                             if (success) {
                                                 newDelimiter = ""
                                                 keyboardController?.hide()
-                                                Toast.makeText(
-                                                    context,
-                                                    "Delimiter added",
-                                                    Toast.LENGTH_SHORT
-                                                ).show()
+                                                Toast.makeText(context, "Word delimiter added", Toast.LENGTH_SHORT).show()
                                             } else {
-                                                Toast.makeText(
-                                                    context,
-                                                    "Delimiter already exists or is invalid",
-                                                    Toast.LENGTH_SHORT
-                                                ).show()
+                                                Toast.makeText(context, "Already exists or is invalid", Toast.LENGTH_SHORT).show()
                                             }
                                         }
                                     }
@@ -289,21 +288,13 @@ fun DelimiterConfigScreen(
                             FilledIconButton(
                                 onClick = {
                                     if (newDelimiter.isNotBlank()) {
-                                        val success = viewModel.addDelimiter(newDelimiter)
+                                        val success = viewModel.addWordDelimiter(newDelimiter)
                                         if (success) {
                                             newDelimiter = ""
                                             keyboardController?.hide()
-                                            Toast.makeText(
-                                                context,
-                                                "Delimiter added",
-                                                Toast.LENGTH_SHORT
-                                            ).show()
+                                            Toast.makeText(context, "Word delimiter added", Toast.LENGTH_SHORT).show()
                                         } else {
-                                            Toast.makeText(
-                                                context,
-                                                "Delimiter already exists or is invalid",
-                                                Toast.LENGTH_SHORT
-                                            ).show()
+                                            Toast.makeText(context, "Already exists or is invalid", Toast.LENGTH_SHORT).show()
                                         }
                                     }
                                 },
@@ -315,7 +306,7 @@ fun DelimiterConfigScreen(
                             ) {
                                 Icon(
                                     imageVector = Icons.Rounded.Add,
-                                    contentDescription = "Add delimiter"
+                                    contentDescription = "Add word delimiter"
                                 )
                             }
                         }
@@ -323,7 +314,7 @@ fun DelimiterConfigScreen(
                 }
             }
 
-            // Default Delimiters Reference
+            // Info
             item {
                 Surface(
                     color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f),
@@ -334,7 +325,7 @@ fun DelimiterConfigScreen(
                         modifier = Modifier.padding(16.dp)
                     ) {
                         Text(
-                            text = "Default Delimiters",
+                            text = "How Word Delimiters Work",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
@@ -343,8 +334,13 @@ fun DelimiterConfigScreen(
                         Spacer(modifier = Modifier.height(8.dp))
 
                         Text(
-                            text = UserPreferencesRepository.DEFAULT_ARTIST_DELIMITERS.joinToString("  •  ") { "\"$it\"" },
-                            style = MaterialTheme.typography.bodyMedium,
+                            text = "Word delimiters are matched case-insensitively with spaces around them.\n\n" +
+                                    "Single-character delimiters (like \"x\") require spaces on both sides to avoid false matches.\n\n" +
+                                    "Examples:\n" +
+                                    "  \"Drake feat. Rihanna\" -> Drake, Rihanna\n" +
+                                    "  \"Marshmello x Bastille\" -> Marshmello, Bastille\n" +
+                                    "  \"A vs. B\" -> A, B",
+                            style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -353,7 +349,7 @@ fun DelimiterConfigScreen(
         }
 
         CollapsibleCommonTopBar(
-            title = "Delimiters",
+            title = "Word Delimiters",
             collapseFraction = collapseFraction,
             headerHeight = currentTopBarHeightDp,
             onBackClick = { navController.popBackStack() },
@@ -390,14 +386,14 @@ fun DelimiterConfigScreen(
                 onDismissRequest = { showResetDialog = false },
                 title = {
                     Text(
-                        text = "Reset Delimiters?",
+                        text = "Reset Word Delimiters?",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold
                     )
                 },
                 text = {
                     Text(
-                        text = "This will clear all your custom delimiters and restore the defaults. This action cannot be undone.",
+                        text = "This will clear all your custom word delimiters and restore the default keywords. This action cannot be undone.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -412,8 +408,8 @@ fun DelimiterConfigScreen(
                 confirmButton = {
                     Button(
                         onClick = {
-                            viewModel.resetDelimitersToDefault()
-                            Toast.makeText(context, "Delimiters reset to defaults", Toast.LENGTH_SHORT).show()
+                            viewModel.resetWordDelimitersToDefault()
+                            Toast.makeText(context, "Word delimiters reset to defaults", Toast.LENGTH_SHORT).show()
                             showResetDialog = false
                         },
                         colors = ButtonDefaults.buttonColors(
@@ -425,7 +421,7 @@ fun DelimiterConfigScreen(
                     }
                 },
                 dismissButton = {
-                    TextButton(
+                    androidx.compose.material3.TextButton(
                         onClick = { showResetDialog = false }
                     ) {
                         Text("Cancel")
@@ -436,39 +432,4 @@ fun DelimiterConfigScreen(
             )
         }
     }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun DelimiterChip(
-    delimiter: String,
-    canRemove: Boolean,
-    onRemove: () -> Unit
-) {
-    InputChip(
-        selected = true,
-        onClick = onRemove,
-        label = {
-            Text(
-                text = if (delimiter == " ") "Space" else "\"$delimiter\"",
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium
-            )
-        },
-        trailingIcon = if (canRemove) {
-            {
-                Icon(
-                    imageVector = Icons.Rounded.Close,
-                    contentDescription = "Remove",
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-        } else null,
-        colors = InputChipDefaults.inputChipColors(
-            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
-            selectedTrailingIconColor = MaterialTheme.colorScheme.onPrimaryContainer
-        ),
-        border = null
-    )
 }
