@@ -11,6 +11,7 @@ import com.theveloper.pixelplay.data.network.deezer.DeezerApiService
 import com.theveloper.pixelplay.utils.NetworkRetryUtils
 import com.theveloper.pixelplay.utils.isRetryableNetworkError
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.sync.Mutex
@@ -138,6 +139,8 @@ class ArtistImageRepository @Inject constructor(
                         } else {
                             Timber.tag(TAG).d("Skipping prefetch for $artistName") //check
                         }
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (e: Exception) {
                         Timber.tag(TAG).w("Failed to prefetch image for $artistName: ${e.message}")
                     }
@@ -194,6 +197,8 @@ class ArtistImageRepository @Inject constructor(
                     null
                 }
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Timber.tag(TAG).e("Error fetching artist image for $artistName: ${e.message}")
             // Consider transient errors? For now treating as failed to avoid spam.

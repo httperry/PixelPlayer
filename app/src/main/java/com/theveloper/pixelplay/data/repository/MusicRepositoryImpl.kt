@@ -109,6 +109,7 @@ class MusicRepositoryImpl @Inject constructor(
     // Tracks the active prefetch job so a new flow emission cancels the previous one.
     @Volatile private var prefetchJob: Job? = null
     @Volatile private var currentSongArtistPrefetchJob: Job? = null
+    @Volatile private var currentSongArtistPrefetchSongId: Long? = null
     @Volatile private var telegramDownloadSyncObserverStarted = false
     private val telegramCacheManager: com.theveloper.pixelplay.data.telegram.TelegramCacheManager
         get() = telegramCacheManagerProvider.get()
@@ -310,7 +311,16 @@ class MusicRepositoryImpl @Inject constructor(
             .onEach { artists ->
                 val missingImages = artists.missingImageCandidates()
                 if (missingImages.isNotEmpty()) {
-                    currentSongArtistPrefetchJob?.cancel()
+                    val isNewSong = currentSongArtistPrefetchSongId != songId
+                    if (isNewSong) {
+                        currentSongArtistPrefetchJob?.cancel()
+                        currentSongArtistPrefetchSongId = songId
+                    } else if (currentSongArtistPrefetchJob?.isActive == true) {
+                        // Room re-emits as artist rows are updated; keep the current song batch
+                        // alive so one successful image write does not cancel the remaining fetches.
+                        return@onEach
+                    }
+
                     currentSongArtistPrefetchJob = repositoryScope.launch {
                         artistImageRepository.prefetchArtistImages(missingImages)
                     }

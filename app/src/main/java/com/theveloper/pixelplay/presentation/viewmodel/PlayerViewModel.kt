@@ -2044,7 +2044,7 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun triggerAlbumNavigationFromPlayer(albumId: Long) {
-        if (albumId <= 0) {
+        if (albumId == -1L) {
             Log.d("AlbumDebug", "triggerAlbumNavigationFromPlayer ignored invalid albumId=$albumId")
             return
         }
