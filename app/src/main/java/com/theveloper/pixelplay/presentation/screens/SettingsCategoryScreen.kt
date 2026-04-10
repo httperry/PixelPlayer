@@ -2,6 +2,9 @@ package com.theveloper.pixelplay.presentation.screens
 
 import com.theveloper.pixelplay.presentation.navigation.navigateSafely
 import com.theveloper.pixelplay.presentation.components.BackupModuleSelectionDialog
+import com.theveloper.pixelplay.ui.theme.ExpTitleTypography
+import com.theveloper.pixelplay.ui.theme.AbsoluteSmoothCornerShape
+import com.theveloper.pixelplay.data.preferences.AiPreferencesRepository
 
 import android.content.Intent
 import android.net.Uri
@@ -1111,7 +1114,7 @@ fun SettingsCategoryScreen(
                                     "OPENAI" -> {
                                         GeminiSystemPromptItem(
                                             systemPrompt = openaiSystemPrompt,
-                                            defaultPrompt = com.theveloper.pixelplay.data.preferences.AiPreferencesRepository.DEFAULT_OPENAI_SYSTEM_PROMPT,
+                                            defaultPrompt = AiPreferencesRepository.DEFAULT_OPENAI_SYSTEM_PROMPT,
                                             onSystemPromptSave = { settingsViewModel.onOpenAiSystemPromptChange(it) },
                                             onReset = { settingsViewModel.resetOpenAiSystemPrompt() },
                                             title = "System Prompt",
