@@ -1116,6 +1116,11 @@ fun SettingsCategoryScreen(
                                             onReset = { settingsViewModel.resetOpenAiSystemPrompt() },
                                             title = "System Prompt",
                                             subtitle = "Customize how the AI behaves."
+	                                        )
+	                                    }
+	                                }
+	                            }
+
                             // AI Performance & Context Section (Premium M3E Styling)
                             Spacer(modifier = Modifier.height(16.dp))
                             Text(
