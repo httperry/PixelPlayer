@@ -990,7 +990,7 @@ fun SettingsCategoryScreen(
                                                 )
                                             }
                                             Icon(
-                                                imageVector = androidx.compose.material.icons.rounded.KeyboardArrowDown,
+                                                imageVector = Icons.Rounded.ExpandMore,
                                                 contentDescription = if (expanded) "Hide" else "Show",
                                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                                 modifier = Modifier.rotate(rotation)
