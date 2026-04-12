@@ -931,11 +931,11 @@ fun LibraryScreen(
         }.collectAsStateWithLifecycle(initialValue = LibraryScreenPlayerProjection())
         val isLibraryContentEmpty by remember(playerViewModel) {
             combine(
-                playerViewModel.allSongsFlow,
+                playerViewModel.songCountFlow,
                 playerViewModel.albumsFlow,
                 playerViewModel.artistsFlow
-            ) { allSongs, albums, artists ->
-                allSongs.isEmpty() && albums.isEmpty() && artists.isEmpty()
+            ) { songCount, albums, artists ->
+                songCount == 0 && albums.isEmpty() && artists.isEmpty()
             }.distinctUntilChanged()
         }.collectAsStateWithLifecycle(initialValue = true)
 
@@ -1150,21 +1150,24 @@ fun LibraryScreen(
                                     SelectionActionRow(
                                         selectedCount = selectedSongs.size,
                                         onSelectAll = {
-                                            val songsToSelect = when (tabTitles.getOrNull(currentTabIndex)?.toLibraryTabIdOrNull()) {
-                                                LibraryTabId.LIKED -> favoritePagingItems.itemSnapshotList.items
-                                                LibraryTabId.FOLDERS -> {
-                                                    // If we are deep in a folder, select songs of that folder.
-                                                    // If we are at root, there are no songs to select.
-                                                    playerViewModel.playerUiState.value.currentFolder?.songs ?: emptyList()
+                                            when (tabTitles.getOrNull(currentTabIndex)?.toLibraryTabIdOrNull()) {
+                                                LibraryTabId.LIKED -> {
+                                                    multiSelectionState.selectAll(favoritePagingItems.itemSnapshotList.items)
                                                 }
-                                                // For SONGS and others fallback to all songs?
-                                                // Actually ALBUMS/ARTISTS don't show songs list directly, they show items.
-                                                // Selection mode is likely disabled there or not reachable.
-                                                // But for SONGS tab:
-                                                LibraryTabId.SONGS -> playerViewModel.allSongsFlow.value
-                                                else -> emptyList()
+                                                LibraryTabId.FOLDERS -> {
+                                                    val songsToSelect =
+                                                        playerViewModel.playerUiState.value.currentFolder?.songs ?: emptyList()
+                                                    multiSelectionState.selectAll(songsToSelect)
+                                                }
+                                                LibraryTabId.SONGS -> {
+                                                    scope.launch {
+                                                        val songsToSelect =
+                                                            playerViewModel.getSongsForCurrentLibrarySelection()
+                                                        multiSelectionState.selectAll(songsToSelect)
+                                                    }
+                                                }
+                                                else -> Unit
                                             }
-                                            multiSelectionState.selectAll(songsToSelect)
                                         },
                                         onDeselect = { multiSelectionState.clearSelection() },
                                         onOptionsClick = { showMultiSelectionSheet = true }
@@ -1667,10 +1670,8 @@ fun LibraryScreen(
         }
     )
 
-    val allSongsForPlaylistDialog by playerViewModel.allSongsFlow.collectAsStateWithLifecycle()
     CreatePlaylistDialog(
         visible = showCreatePlaylistDialog,
-        allSongs = allSongsForPlaylistDialog,
         onDismiss = { showCreatePlaylistDialog = false },
         onGenerateClick = {
             showCreatePlaylistDialog = false

@@ -451,8 +451,25 @@ class MusicRepositoryImpl @Inject constructor(
 
     override fun searchSongs(query: String): Flow<List<Song>> {
         if (query.isBlank()) return flowOf(emptyList())
-        // Use limited search to avoid loading thousands of results into memory
-        return musicDao.searchSongsLimited(query, emptyList(), false, SEARCH_RESULTS_LIMIT).map { entities ->
+        return combine(
+            userPreferencesRepository.allowedDirectoriesFlow,
+            userPreferencesRepository.blockedDirectoriesFlow
+        ) { allowedDirs, blockedDirs ->
+            allowedDirs to blockedDirs
+        }.flatMapLatest { (allowedDirs, blockedDirs) ->
+            flow {
+                val (allowedParentDirs, applyDirectoryFilter) =
+                    computeAllowedDirs(allowedDirs, blockedDirs)
+                emit(
+                    musicDao.searchSongsLimited(
+                        query = query,
+                        allowedParentDirs = allowedParentDirs,
+                        applyDirectoryFilter = applyDirectoryFilter,
+                        limit = SEARCH_RESULTS_LIMIT
+                    )
+                )
+            }.flatMapLatest { it }
+        }.map { entities ->
             entities.map { it.toSong() }
         }.flowOn(Dispatchers.IO)
     }
@@ -587,7 +604,14 @@ class MusicRepositoryImpl @Inject constructor(
 
     // Implementación de las nuevas funciones suspend para carga única
     override suspend fun getAllSongsOnce(): List<Song> = withContext(Dispatchers.IO) {
-        musicDao.getAllSongsList().map { it.toSong() }
+        val allowedDirs = userPreferencesRepository.allowedDirectoriesFlow.first()
+        val blockedDirs = userPreferencesRepository.blockedDirectoriesFlow.first()
+        val (allowedParentDirs, applyDirectoryFilter) =
+            computeAllowedDirs(allowedDirs, blockedDirs)
+        musicDao.getAllSongs(
+            allowedParentDirs = allowedParentDirs,
+            applyDirectoryFilter = applyDirectoryFilter
+        ).first().map { it.toSong() }
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)

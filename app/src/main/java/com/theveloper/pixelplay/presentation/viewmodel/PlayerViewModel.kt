@@ -286,6 +286,16 @@ class PlayerViewModel @Inject constructor(
     val paginatedSongs: Flow<PagingData<Song>> = libraryStateHolder.songsPagingFlow
         .cachedIn(viewModelScope)
 
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val playlistPickerSongs: Flow<PagingData<Song>> = libraryStateHolder.currentSongSortOption
+        .flatMapLatest { sortOption ->
+            musicRepository.getPaginatedSongs(
+                sortOption = sortOption,
+                storageFilter = com.theveloper.pixelplay.data.model.StorageFilter.ALL
+            )
+        }
+        .cachedIn(viewModelScope)
+
     private val offlinePlaybackObserverJob = viewModelScope.launch {
         connectivityStateHolder.offlinePlaybackBlocked.collect {
             Timber.w("Received offline blocked event. Showing dialog.")
@@ -694,6 +704,13 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
+    suspend fun getSongsForCurrentLibrarySelection(): List<Song> {
+        val sortOption = playerUiState.value.currentSongSortOption
+        val storageFilter = playerUiState.value.currentStorageFilter
+        val sortedIds = musicRepository.getSongIdsSorted(sortOption, storageFilter)
+        return resolvePlaybackQueueFromSortedIds(sortedIds)
+    }
+
     private fun launchLatestFullQueuePlayback(
         song: Song,
         queueName: String,
@@ -1067,6 +1084,13 @@ class PlayerViewModel @Inject constructor(
             initialValue = persistentListOf()
         )
 
+    val songCountFlow: StateFlow<Int> = musicRepository.getSongCountFlow()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = 0
+        )
+
     val albumsFlow: StateFlow<ImmutableList<Album>> = libraryStateHolder.albums
     val artistsFlow: StateFlow<ImmutableList<Artist>> = libraryStateHolder.artists
 
@@ -1322,7 +1346,6 @@ class PlayerViewModel @Inject constructor(
     private fun updateDailyMix() {
         // Delegate to DailyMixStateHolder
         dailyMixStateHolder.updateDailyMix(
-            allSongsFlow = allSongsFlow,
             favoriteSongIdsFlow = favoriteSongIds
         )
     }
@@ -1438,13 +1461,12 @@ class PlayerViewModel @Inject constructor(
 
     private fun loadPersistedDailyMix() {
         // Delegate to DailyMixStateHolder
-        dailyMixStateHolder.loadPersistedDailyMix(allSongsFlow)
+        dailyMixStateHolder.loadPersistedDailyMix()
     }
 
     fun forceUpdateDailyMix() {
         // Delegate to DailyMixStateHolder
         dailyMixStateHolder.forceUpdate(
-            allSongsFlow = allSongsFlow,
             favoriteSongIdsFlow = favoriteSongIds
         )
     }
@@ -1793,7 +1815,7 @@ class PlayerViewModel @Inject constructor(
         // Initialize AiStateHolder
         aiStateHolder.initialize(
             scope = viewModelScope,
-            allSongsProvider = { libraryStateHolder.allSongs.value },
+            allSongsProvider = { musicRepository.getAllSongsOnce() },
             favoriteSongIdsProvider = { favoriteSongIds.value },
             toastEmitter = { msg -> viewModelScope.launch { _toastEvents.emit(msg) } },
             playSongsCallback = { songs, startSong, queueName -> playSongs(songs, startSong, queueName) },
@@ -1955,7 +1977,6 @@ class PlayerViewModel @Inject constructor(
     private fun checkAndUpdateDailyMixIfNeeded() {
         // Delegate to DailyMixStateHolder
         dailyMixStateHolder.checkAndUpdateIfNeeded(
-            allSongsFlow = allSongsFlow,
             favoriteSongIdsFlow = favoriteSongIds
         )
     }
@@ -3839,6 +3860,10 @@ class PlayerViewModel @Inject constructor(
 
     fun observeSongs(songIds: List<String>): Flow<List<Song>> {
         return musicRepository.getSongsByIds(songIds)
+    }
+
+    fun searchSongs(query: String): Flow<List<Song>> {
+        return musicRepository.searchSongs(query)
     }
 
     suspend fun getSongs(songIds: List<String>) : List<Song>{

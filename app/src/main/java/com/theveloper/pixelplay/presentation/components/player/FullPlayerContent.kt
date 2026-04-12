@@ -90,6 +90,7 @@ import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.input.pointer.pointerInput
@@ -1668,7 +1669,13 @@ private fun PlayerProgressBarSection(
     var sliderDragValue by remember { mutableStateOf<Float?>(null) }
     // Optimistic Seek: Holds the target position immediately after seek to prevent snap-back
     var optimisticPosition by remember { mutableStateOf<Long?>(null) }
-    
+
+    // Reset seek state on song change to avoid stale position from previous song
+    LaunchedEffect(songId) {
+        sliderDragValue = null
+        optimisticPosition = null
+    }
+
     // Clear optimistic position ONLY when the SMOOTH (visual) progress catches up
     // using raw position causes a jump because smooth progress might lag behind raw.
     LaunchedEffect(optimisticPosition) {
@@ -1761,24 +1768,36 @@ private fun PlayerProgressBarSection(
                 .heightIn(min = 70.dp)
         ) {
             // Isolated Slider Component
-            EfficientSlider(
-                valueState = animatedProgressState,
-                onValueChange = { sliderDragValue = it },
-                onValueChangeFinished = {
-                    sliderDragValue?.let { finalValue ->
-                        val targetMs = (finalValue * durationForCalc).roundToLong()
-                        optimisticPosition = targetMs
-                        onSeek(targetMs)
+            // Wrapped in a Box with detectVerticalDragGestures to prevent the outer
+            // playerSheetVerticalDragGesture from intercepting slider touches. If the
+            // user's drag has a vertical component, the inner handler absorbs it (consuming
+            // the events) so the sheet-collapse gesture never activates in this area.
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .pointerInput(Unit) {
+                        detectVerticalDragGestures(onVerticalDrag = { _, _ -> })
                     }
-                    sliderDragValue = null
-                },
-                thumbColor = thumbColor,
-                activeTrackColor = activeTrackColor,
-                inactiveTrackColor = inactiveTrackColor,
-                interactionSource = interactionSource,
-                isPlaying = shouldAnimateWavyProgress,
-                trackEdgePadding = progressSectionHorizontalInset
-            )
+            ) {
+                EfficientSlider(
+                    valueState = animatedProgressState,
+                    onValueChange = { sliderDragValue = it },
+                    onValueChangeFinished = {
+                        sliderDragValue?.let { finalValue ->
+                            val targetMs = (finalValue * durationForCalc).roundToLong()
+                            optimisticPosition = targetMs
+                            onSeek(targetMs)
+                        }
+                        sliderDragValue = null
+                    },
+                    thumbColor = thumbColor,
+                    activeTrackColor = activeTrackColor,
+                    inactiveTrackColor = inactiveTrackColor,
+                    interactionSource = interactionSource,
+                    isPlaying = shouldAnimateWavyProgress,
+                    trackEdgePadding = progressSectionHorizontalInset
+                )
+            }
 
             // Isolated Time Labels
             EfficientTimeLabels(
