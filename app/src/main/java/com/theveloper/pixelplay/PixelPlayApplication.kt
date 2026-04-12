@@ -9,6 +9,9 @@ import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
 import coil.ImageLoader
 import coil.ImageLoaderFactory
+import com.theveloper.pixelplay.data.repository.ArtistImageRepository
+import com.theveloper.pixelplay.data.telegram.TelegramRepository
+import com.theveloper.pixelplay.presentation.viewmodel.ThemeStateHolder
 import com.theveloper.pixelplay.utils.CrashHandler
 import com.theveloper.pixelplay.utils.MediaMetadataRetrieverPool
 import dagger.hilt.android.HiltAndroidApp
@@ -35,6 +38,15 @@ class PixelPlayApplication : Application(), ImageLoaderFactory, Configuration.Pr
 
     @Inject
     lateinit var localArtworkCoilFetcherFactory: dagger.Lazy<com.theveloper.pixelplay.data.image.LocalArtworkCoilFetcher.Factory>
+
+    @Inject
+    lateinit var themeStateHolder: dagger.Lazy<ThemeStateHolder>
+
+    @Inject
+    lateinit var artistImageRepository: dagger.Lazy<ArtistImageRepository>
+
+    @Inject
+    lateinit var telegramRepository: dagger.Lazy<TelegramRepository>
 
     // AÑADE EL COMPANION OBJECT
     companion object {
@@ -79,10 +91,35 @@ class PixelPlayApplication : Application(), ImageLoaderFactory, Configuration.Pr
             .build()
     }
 
+    @Suppress("DEPRECATION")
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
-        if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL) {
+
+        imageLoader.get().memoryCache?.trimMemory(level)
+
+        if (
+            level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_MODERATE ||
+            level >= ComponentCallbacks2.TRIM_MEMORY_BACKGROUND ||
+            level == ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN
+        ) {
+            themeStateHolder.get().trimMemory(level)
+        }
+
+        if (
+            level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW ||
+            level >= ComponentCallbacks2.TRIM_MEMORY_BACKGROUND ||
+            level == ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN
+        ) {
+            artistImageRepository.get().clearCache()
+            telegramRepository.get().clearMemoryCache()
             MediaMetadataRetrieverPool.clear()
+        }
+
+        if (
+            level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL ||
+            level >= ComponentCallbacks2.TRIM_MEMORY_COMPLETE
+        ) {
+            imageLoader.get().memoryCache?.clear()
         }
     }
 
