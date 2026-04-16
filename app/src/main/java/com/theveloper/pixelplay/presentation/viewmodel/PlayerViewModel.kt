@@ -3596,8 +3596,11 @@ class PlayerViewModel @Inject constructor(
             // On Android 11+, use the system delete confirmation dialog via MediaStore.createDeleteRequest()
             // which both confirms AND handles deletion in one step (no MANAGE_EXTERNAL_STORAGE needed).
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-                val intentSender = com.theveloper.pixelplay.utils.FileDeletionUtils
-                    .getDeleteRequestIntentSender(activity, song.path)
+                val songLongId = song.id.toLongOrNull()
+                val intentSender = if (songLongId != null && songLongId > 0) {
+                    com.theveloper.pixelplay.utils.MediaStorePermissionHelper
+                        .createDeleteRequestForSong(activity, songLongId)
+                } else null
                 if (intentSender != null) {
                     pendingDeleteSong = song
                     pendingDeleteCallback = onResult

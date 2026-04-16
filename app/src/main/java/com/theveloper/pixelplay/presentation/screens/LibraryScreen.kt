@@ -100,8 +100,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.AnnotatedString
@@ -429,6 +431,7 @@ fun LibraryScreen(
 ) {
     // La recolección de estados de alto nivel se mantiene mínima.
     val context = LocalContext.current // Added context
+    val haptic = LocalHapticFeedback.current
     val lastTabIndex by playerViewModel.lastLibraryTabIndexFlow.collectAsStateWithLifecycle()
     val favoriteIds by playerViewModel.favoriteSongIds.collectAsStateWithLifecycle() // Reintroducir favoriteIds aquí
     val scope = rememberCoroutineScope() // Mantener si se usa para acciones de UI
@@ -516,8 +519,11 @@ fun LibraryScreen(
     var foldersLocateAction by remember { mutableStateOf<(() -> Unit)?>(null) }
 
     // Multi-selection callbacks
-    val onSongLongPress: (Song) -> Unit = remember(multiSelectionState) {
-        { song -> multiSelectionState.toggleSelection(song) }
+    val onSongLongPress: (Song) -> Unit = remember(multiSelectionState, haptic) {
+        { song -> 
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            multiSelectionState.toggleSelection(song) 
+        }
     }
 
     val onSongSelectionToggle: (Song) -> Unit = remember(multiSelectionState) {
@@ -537,8 +543,11 @@ fun LibraryScreen(
         }
     }
 
-    val onAlbumLongPress: (Album) -> Unit = remember(toggleAlbumSelection) {
-        { album -> toggleAlbumSelection(album) }
+    val onAlbumLongPress: (Album) -> Unit = remember(toggleAlbumSelection, haptic) {
+        { album -> 
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            toggleAlbumSelection(album) 
+        }
     }
 
     val onAlbumSelectionToggle: (Album) -> Unit = remember(toggleAlbumSelection) {
@@ -561,8 +570,9 @@ fun LibraryScreen(
     var showMergePlaylistDialog by remember { mutableStateOf(false) }
     var pendingMergePlaylistIds by remember { mutableStateOf(emptyList<String>()) }
 
-    val onPlaylistLongPress: (com.theveloper.pixelplay.data.model.Playlist) -> Unit = remember(playlistMultiSelectionState) {
+    val onPlaylistLongPress: (com.theveloper.pixelplay.data.model.Playlist) -> Unit = remember(playlistMultiSelectionState, haptic) {
         { playlist ->
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
             // Only toggle selection, don't show sheet immediately (similar to songs multi-selection)
             playlistMultiSelectionState.toggleSelection(playlist)
             android.util.Log.d("PlaylistMultiSelect", "Toggled: ${playlist.name}, total selected: ${playlistMultiSelectionState.selectedPlaylists.value.size}")
