@@ -248,6 +248,12 @@ class MusicService : MediaLibraryService() {
             Timber.tag("MusicService").d("Swapped MediaSession player to new instance.")
             requestWidgetFullUpdate(force = true)
             mediaSession?.let { refreshMediaSessionUi(it) }
+
+            // Pre-compute ReplayGain for the incoming track while the crossfade is still running.
+            // isTransitionRunning() is true here, so applyReplayGain stores the result as
+            // pendingReplayGainVolume. onTransitionFinished() applies it cleanly once the fade
+            // loop ends, avoiding any volume jump on the incoming track.
+            applyReplayGain(newPlayer.currentMediaItem)
         }
     }
 

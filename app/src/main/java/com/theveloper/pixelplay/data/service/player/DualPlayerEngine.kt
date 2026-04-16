@@ -406,6 +406,10 @@ class DualPlayerEngine @Inject constructor(
      */
     fun setHiFiMode(enabled: Boolean) {
         if (hiFiModeEnabled == enabled) return
+        if (enabled && !HiFiCapabilityChecker.isSupported()) {
+            Timber.tag("DualPlayerEngine").w("Hi-Fi mode requested but device does not support PCM_FLOAT AudioTrack — ignoring")
+            return
+        }
         hiFiModeEnabled = enabled
 
         // Save full queue and playback state before releasing
@@ -725,8 +729,12 @@ class DualPlayerEngine @Inject constructor(
 
         // 1. Start Player B (Next Song) paused with volume=0 then immediately request play so overlap is audible
         // NOTE: playerA is currently playing "Old Song". playerB is "Next Song".
+        // Capture the outgoing track's current volume (may be ReplayGain-adjusted) so the
+        // fade-out envelope starts from the correct level instead of jumping back to 1.0.
+        val outgoingStartVolume = playerA.volume.coerceIn(0f, 1f)
         playerB.volume = 0f
-        playerA.volume = 1f
+        // Do NOT force playerA.volume = 1f here — it would override the RG-adjusted value and
+        // cause an audible jump on the outgoing track at the crossfade start.
         if (!playerA.isPlaying && playerA.playbackState == Player.STATE_READY) {
             // Ensure the outgoing track keeps rendering during the crossfade window
             playerA.play()
@@ -836,11 +844,13 @@ class DualPlayerEngine @Inject constructor(
 
         while (elapsed <= duration) {
             val progress = (elapsed.toFloat() / duration).coerceIn(0f, 1f)
-            val volIn = envelope(progress, settings.curveIn)  // Incoming (Now A)
-            val volOut = 1f - envelope(progress, settings.curveOut) // Outgoing (Now B)
+            val volIn = envelope(progress, settings.curveIn)  // Incoming (Now A): 0 → 1
+            val volOut = 1f - envelope(progress, settings.curveOut) // Outgoing (Now B): 1 → 0
 
             playerA.volume = volIn
-            playerB.volume = volOut.coerceIn(0f, 1f)
+            // Scale fade-out by the outgoing track's starting volume so a ReplayGain-adjusted
+            // track (e.g. 0.75) fades from 0.75 → 0 instead of jumping to 1.0 first.
+            playerB.volume = (volOut * outgoingStartVolume).coerceIn(0f, 1f)
 
             if (elapsed - lastLog >= 250) {
                 Timber.tag("TransitionDebug").v("Loop: Progress=%.2f, VolNew=%.2f (Act: %.2f), VolOld=%.2f (Act: %.2f)",

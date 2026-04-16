@@ -46,6 +46,7 @@ import com.theveloper.pixelplay.data.ai.provider.AiClientFactory
 import com.theveloper.pixelplay.data.ai.provider.AiProvider
 import com.theveloper.pixelplay.data.preferences.LaunchTab
 import com.theveloper.pixelplay.data.model.Song
+import com.theveloper.pixelplay.data.service.player.HiFiCapabilityChecker
 import java.io.File
 
 data class SettingsUiState(
@@ -67,6 +68,7 @@ data class SettingsUiState(
     val showQueueHistory: Boolean = true,
     val isCrossfadeEnabled: Boolean = false,
     val hiFiModeEnabled: Boolean = false,
+    val hiFiModeDeviceSupported: Boolean = true,
     val crossfadeDuration: Int = 2000,
     val persistentShuffleEnabled: Boolean = false,
     val folderBackGestureNavigation: Boolean = true,
@@ -449,6 +451,9 @@ class SettingsViewModel @Inject constructor(
     val dataTransferProgress: StateFlow<BackupTransferProgressUpdate?> = _dataTransferProgress.asStateFlow()
 
     init {
+        // One-time device capability check — result is cached inside HiFiCapabilityChecker
+        _uiState.update { it.copy(hiFiModeDeviceSupported = HiFiCapabilityChecker.isSupported()) }
+
         // Consolidated collectors using combine() to reduce coroutine overhead
         // Instead of 20 separate coroutines, we use 2 combined flows
         
