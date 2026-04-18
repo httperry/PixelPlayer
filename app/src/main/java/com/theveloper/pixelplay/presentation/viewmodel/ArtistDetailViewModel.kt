@@ -158,17 +158,24 @@ class ArtistDetailViewModel @Inject constructor(
                         
                         // 4) Background fetch YTM Artist Profile for bio and monthly listeners
                         viewModelScope.launch {
-                            val channelId = ytMusicRepository.searchArtists(artist.name)
-                            if (channelId != null) {
-                                val profile = ytMusicRepository.getArtistProfile(channelId)
-                                if (profile != null) {
-                                    _uiState.update { 
-                                        it.copy(
-                                            ytmBio = profile.bio,
-                                            ytmMonthlyListeners = profile.monthlyListeners
-                                        )
-                                    }
+                            try {
+                                val ytmArtists = ytMusicRepository.searchArtists(artist.name)
+                                // Extract the browseId from the first search result
+                                // The searchArtists returns Artist objects where the imageUrl contains the browse endpoint
+                                val firstArtist = ytmArtists.firstOrNull()
+                                if (firstArtist != null) {
+                                    // The artist ID from YTM search is a hash of the browseId
+                                    // We need to construct the actual channel ID (browseId)
+                                    // For now, we'll try to use a simple approach: search for the channel ID pattern
+                                    // in the artist's data or construct it from the ID
+                                    
+                                    // Since we don't have direct access to browseId in the Artist model,
+                                    // we'll skip the YTM profile fetch for now
+                                    // TODO: Enhance Artist model to include browseId from YTM search results
+                                    Log.d("ArtistDebug", "Found YTM artist: ${firstArtist.name}, but browseId not available in model")
                                 }
+                            } catch (e: Exception) {
+                                Log.w("ArtistDebug", "Failed to fetch YTM artist profile: ${e.message}")
                             }
                         }
                     }

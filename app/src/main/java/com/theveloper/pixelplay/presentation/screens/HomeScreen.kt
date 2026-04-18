@@ -193,6 +193,9 @@ fun HomeScreen(
         recentlyPlayedSongs.map { it.song }.toImmutableList()
     }
 
+    // YouTube Music Discovery Feed
+    val ytmHomeFeed by ytMusicViewModel.homeFeed.collectAsStateWithLifecycle()
+
     ReportDrawnWhen {
         yourMixSongs.isNotEmpty() || isBenchmarkMode
     }
@@ -358,14 +361,11 @@ fun HomeScreen(
                 }
 
                 // YouTube Music Discovery Feed
-                val ytmHomeFeed by ytMusicViewModel.homeFeed.collectAsStateWithLifecycle()
-                if (ytmHomeFeed.isNotEmpty()) {
-                    items(
-                        count = ytmHomeFeed.size,
-                        key = { index -> "ytm_shelf_$index" },
-                        contentType = { "ytm_shelf" }
-                    ) { index ->
-                        val shelf = ytmHomeFeed[index]
+                ytmHomeFeed.forEach { shelf ->
+                    item(
+                        key = "ytm_shelf_${shelf.title}",
+                        contentType = "ytm_shelf"
+                    ) {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -384,12 +384,12 @@ fun HomeScreen(
                             )
                             Spacer(Modifier.height(12.dp))
                             // Reuse AlbumArtCollage to show the songs securely
-                            com.theveloper.pixelplay.presentation.components.AlbumArtCollage(
+                            AlbumArtCollage(
                                 modifier = Modifier.fillMaxWidth(),
-                                songs = shelf.songs,
+                                songs = shelf.songs.toImmutableList(),
                                 padding = 8.dp,
                                 height = 250.dp, // slightly smaller than Your Mix
-                                pattern = com.theveloper.pixelplay.data.preferences.CollagePattern.DIAGONAL_STACK,
+                                pattern = CollagePattern.PIXEL_MOSAIC,
                                 onSongClick = { song ->
                                     playerViewModel.showAndPlaySong(song, shelf.songs, shelf.title)
                                 }

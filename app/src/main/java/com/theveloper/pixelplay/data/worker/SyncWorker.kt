@@ -1750,8 +1750,8 @@ constructor(
             }
 
             // Fetch current playlists to identify old YTM playlists
-            val currentPlaylists = localPlaylistDao.getAllPlaylistsNow()
-            val oldYtmIds = currentPlaylists.filter { it.source == "YTM" }.map { it.id }.toSet()
+            val currentPlaylists = localPlaylistDao.observePlaylistsWithSongs().first()
+            val oldYtmIds = currentPlaylists.filter { it.playlist.source == "YTM" }.map { it.playlist.id }.toSet()
             val newYtmIds = ytmPlaylists.map { it.id }.toSet()
 
             val toDelete = oldYtmIds - newYtmIds

@@ -178,6 +178,18 @@
 -dontwarn net.sourceforge.pinyin4j.**
 
 # =============================================================================
+# NEWPIPE EXTRACTOR RULES
+# =============================================================================
+# Required for YouTube stream extraction
+-keep class org.mozilla.javascript.** { *; }
+-keep class org.mozilla.classfile.ClassFileWriter
+-dontwarn org.mozilla.javascript.tools.**
+
+# Keep NewPipe Extractor classes
+-keep class org.schabi.newpipe.extractor.** { *; }
+-keepclassmembers class org.schabi.newpipe.extractor.** { *; }
+
+# =============================================================================
 # TIMBER LOGGING OPTIMIZATION FOR RELEASE BUILDS
 # =============================================================================
 # Strip VERBOSE and DEBUG log calls entirely from release builds.

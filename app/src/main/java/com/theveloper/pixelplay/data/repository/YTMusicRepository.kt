@@ -35,12 +35,24 @@ data class YTMSearchResults(
  * High-level repository that calls [YTMusicApi] and maps raw JSON responses
  * into PixelPlayer's existing [Song] and artist models.
  *
+ * HYBRID APPROACH:
+ * - Python ytmusicapi (via WebSocket) for metadata, search, library, playlists
+ * - NewPipe Extractor for reliable stream URLs
+ * - Legacy HTTP API as fallback
+ *
  * All parsing is done here so ViewModels never touch raw API types.
  */
 @Singleton
 class YTMusicRepository @Inject constructor(
-    private val api: YTMusicApi
+    private val api: YTMusicApi,
+    private val newPipeExtractor: NewPipeYTMusicExtractor,
+    private val webSocketClient: YTMusicWebSocketClient
 ) {
+    
+    init {
+        // Connect WebSocket client on initialization
+        webSocketClient.connect()
+    }
 
     // -------------------------------------------------------------------------
     // Artist profile
@@ -173,7 +185,8 @@ class YTMusicRepository @Inject constructor(
                 val renderer = item.musicResponsiveListItemRenderer ?: return@mapNotNull null
                 val name = renderer.flexColumns?.firstOrNull()?.musicResponsiveListItemFlexColumnRenderer?.text?.runs?.firstOrNull()?.text ?: return@mapNotNull null
                 val browseId = renderer.navigationEndpoint?.browseEndpoint?.browseId
-                val imageUrl = renderer.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails?.maxByOrNull { it.width }?.url
+                val thumbnails = renderer.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails
+                val imageUrl = thumbnails?.maxByOrNull { thumbnail -> thumbnail.width ?: 0 }?.url
                 
                 com.theveloper.pixelplay.data.model.Artist(
                     id = browseId?.hashCode()?.toLong() ?: 0L,
@@ -286,11 +299,53 @@ class YTMusicRepository @Inject constructor(
 
     suspend fun getPlayerRawStream(videoId: String): YTMPlayerResponse? {
         return try {
-            api.getPlayer(
+            // Try NewPipe Extractor first (most reliable)
+            val streamUrl = newPipeExtractor.getStreamUrl(videoId)
+            
+            if (streamUrl != null) {
+                Log.d(TAG, "NewPipe successfully extracted stream for: $videoId")
+                // Create a synthetic response with the stream URL
+                return YTMPlayerResponse(
+                    videoDetails = VideoDetails(videoId = videoId),
+                    streamingData = StreamingData(
+                        adaptiveFormats = listOf(
+                            AdaptiveFormat(
+                                url = streamUrl,
+                                mimeType = "audio/mp4",
+                                bitrate = 128000 // NewPipe handles quality selection
+                            )
+                        )
+                    )
+                )
+            }
+            
+            // Fallback to direct API (WEB_REMIX)
+            Log.d(TAG, "NewPipe failed, trying WEB_REMIX API for: $videoId")
+            val response = api.getPlayer(
                 request = YTMPlayerRequest(videoId = videoId)
             )
+            
+            // If playback is blocked, try Android client as last resort
+            if (response.streamingData?.adaptiveFormats.isNullOrEmpty()) {
+                Log.d(TAG, "WEB_REMIX failed, trying ANDROID client for video $videoId")
+                return api.getPlayer(
+                    request = YTMPlayerRequest(
+                        videoId = videoId,
+                        context = YTMClientContext(
+                            client = YTMClient(
+                                clientName = "ANDROID_MUSIC",
+                                clientVersion = "7.11.50",
+                                platform = "MOBILE",
+                                clientFormFactor = "SMALL_FORM_FACTOR"
+                            )
+                        )
+                    )
+                )
+            }
+            
+            response
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to fetch player stream for video $videoId: ${e.message}")
+            Log.e(TAG, "All methods failed to fetch player stream for video $videoId: ${e.message}")
             null
         }
     }
@@ -314,8 +369,8 @@ class YTMusicRepository @Inject constructor(
                 val carouselTitle = carousel.header?.musicCarouselShelfBasicHeaderRenderer?.title?.text() ?: "Recommendations"
                 
                 val songs = carousel.contents
-                    ?.mapNotNull { it.musicResponsiveListItemRenderer }
-                    ?.mapNotNull { it.toSong() }
+                    ?.mapNotNull { carouselItem -> carouselItem.musicTwoRowItemRenderer }
+                    ?.mapNotNull { renderer -> renderer.toSong() }
                     ?: emptyList()
                     
                 if (songs.isNotEmpty()) {
@@ -372,7 +427,8 @@ class YTMusicRepository @Inject constructor(
                 ?.playNavigationEndpoint?.watchEndpoint?.videoId
             ?: return null
 
-        val thumbUrl = thumbnail?.musicThumbnailRenderer?.thumbnail?.bestUrl(640)
+        val thumbUrl = thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails
+            ?.maxByOrNull { it.width ?: 0 }?.url
 
         return Song(
             id = videoId,
@@ -401,7 +457,8 @@ class YTMusicRepository @Inject constructor(
         val title = this.title?.text() ?: return null
         val subtitle = this.subtitle?.text() ?: ""
         val browseId = navigationEndpoint?.browseEndpoint?.browseId ?: return null
-        val thumbUrl = thumbnailRenderer?.musicThumbnailRenderer?.thumbnail?.bestUrl(640)
+        val thumbUrl = thumbnailRenderer?.musicThumbnailRenderer?.thumbnail?.thumbnails
+            ?.maxByOrNull { it.width ?: 0 }?.url
 
         // Albums don't have a direct videoId, so we use browseId as a placeholder ID
         return Song(
@@ -422,7 +479,7 @@ class YTMusicRepository @Inject constructor(
         )
     }
 
-    // Extension on ThumbnailList to pull best URL
+    // Extension on List<Thumbnail> to pull best URL
     private fun List<Thumbnail>.bestUrl(targetWidth: Int = 1080): String? {
         val sorted = sortedByDescending { it.width ?: 0 }
         val best = sorted.firstOrNull()?.url ?: return null

@@ -10,6 +10,9 @@ plugins {
     id("kotlin-parcelize")
 }
 
+// Apply Chaquopy after Android plugin
+apply(plugin = "com.chaquo.python")
+
 val enableAbiSplits = providers.gradleProperty("pixelplay.enableAbiSplits")
     .orElse("false")
     .map(String::toBoolean)
@@ -55,6 +58,23 @@ android {
         versionName = project.findProperty("APP_VERSION_NAME") as String
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        
+        // Python configuration - NDK filters
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+        }
+    }
+    
+    // Chaquopy Python configuration
+    extensions.configure<com.chaquo.python.ChaquopyExtension> {
+        defaultConfig {
+            version = "3.11"
+            pip {
+                install("ytmusicapi==1.8.1")
+                install("websockets==12.0")
+                install("cryptography==42.0.0")
+            }
+        }
     }
 
     buildTypes {
@@ -150,11 +170,10 @@ composeCompiler {
     // Applies Compose's strong skipping optimization (skip composables whose parameters
     // haven't changed) in Debug builds as well, making dev-mode performance more
     // representative of Release and reducing unnecessary recompositions during development.
-    enableStrongSkippingMode = true
-
     // Reduces generated code for non-skippable composables, improving runtime
     // performance by eliminating unnecessary group bookkeeping.
     featureFlags = setOf(
+        org.jetbrains.kotlin.compose.compiler.gradle.ComposeFeatureFlag.StrongSkipping,
         org.jetbrains.kotlin.compose.compiler.gradle.ComposeFeatureFlag.OptimizeNonSkippingGroups
     )
 }
@@ -363,6 +382,18 @@ dependencies {
     implementation(libs.converter.gson)
     implementation(libs.okhttp)
     implementation(libs.logging.interceptor)
+
+    // NewPipe Extractor for YouTube Music streaming
+    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.24.5")
+    
+    // yt-dlp Android for comprehensive YouTube Music support
+    implementation("com.github.yausername.youtubedl-android:library:0.16.0")
+    
+    // WebSocket client
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    
+    // Encryption
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
     // Ktor for HTTP Server
     implementation(libs.ktor.server.core)

@@ -9,11 +9,11 @@ import retrofit2.http.Query
 // /playlist/create & /browse/edit_playlist — Playlist Management
 // ---------------------------------------------------------------------------
 data class YTMPlaylistCreateRequest(
-    val context: YTMContext = YTMContext(),
     val title: String,
     val description: String = "",
     val privacyStatus: String = "PRIVATE",
-    val videoIds: List<String> = emptyList()
+    val videoIds: List<String> = emptyList(),
+    val context: YTMClientContext = YTMClientContext()
 )
 
 data class YTMPlaylistCreateResponse(
@@ -21,9 +21,9 @@ data class YTMPlaylistCreateResponse(
 )
 
 data class YTMPlaylistEditRequest(
-    val context: YTMContext = YTMContext(),
     val playlistId: String,
-    val actions: List<YTMPlaylistEditAction>
+    val actions: List<YTMPlaylistEditAction>,
+    val context: YTMClientContext = YTMClientContext()
 )
 
 data class YTMPlaylistEditAction(
@@ -49,9 +49,11 @@ data class YTMClientContext(
 
 data class YTMClient(
     val clientName: String = "WEB_REMIX",
-    val clientVersion: String = "1.20240101.01.00",
+    val clientVersion: String = "1.20250110.01.00", // Updated to recent version
     val hl: String = "en",
-    val gl: String = "US"
+    val gl: String = "US",
+    val platform: String = "DESKTOP",
+    val clientFormFactor: String = "UNKNOWN_FORM_FACTOR"
 )
 
 // ---------------------------------------------------------------------------
@@ -68,7 +70,7 @@ data class PlaybackContext(
 )
 
 data class ContentPlaybackContext(
-    val signatureTimestamp: Int = 19950 // kept in sync with YouTube's player JS
+    val signatureTimestamp: Int = 20190 // Updated timestamp (check YouTube player for current value)
 )
 
 data class YTMPlayerResponse(
@@ -431,12 +433,4 @@ interface YTMusicApi {
         @Body request: YTMPlaylistEditRequest,
         @Query("key") key: String = "AIzaSyC9XL3ZjWddXya6X74dJoCTL-WEYFDNX30"
     ): YTMPlaylistEditResponse
-
-    /** Resolves stream URLs and audio configuration (loudness) for a video. */
-    @POST("youtubei/v1/player")
-    @Headers("Content-Type: application/json")
-    suspend fun getPlayer(
-        @Body request: YTMPlayerRequest,
-        @Query("key") key: String = "AIzaSyC9XL3ZjWddXya6X74dJoCTL-WEYFDNX30"
-    ): YTMPlayerResponse
 }

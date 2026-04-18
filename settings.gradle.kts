@@ -19,13 +19,7 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        maven("https://jitpack.io") {
-            content {
-                includeGroup("com.github.FaceOnLive")
-                includeGroup("com.github.racra")
-                includeGroup("com.github.tdlibx")
-            }
-        }
+        maven("https://jitpack.io")
     }
 }
 

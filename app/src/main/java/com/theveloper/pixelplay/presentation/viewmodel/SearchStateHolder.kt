@@ -79,6 +79,7 @@ class SearchStateHolder @Inject constructor(
         observeSearchRequests()
     }
 
+    @OptIn(kotlinx.coroutines.FlowPreview::class)
     private fun observeSearchRequests() {
         searchJob?.cancel()
         searchJob = scope?.launch {

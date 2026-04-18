@@ -510,30 +510,26 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideYTMusicApi(
-        okHttpClient: OkHttpClient,
-        ytmSessionRepository: com.theveloper.pixelplay.data.network.ytmusic.YTMSessionRepository,
-        userPreferencesRepository: UserPreferencesRepository
-    ): com.theveloper.pixelplay.data.network.ytmusic.YTMusicApi {
-        val ytMusicInterceptor = com.theveloper.pixelplay.data.network.ytmusic.YTMusicInterceptor(
-            cookieProvider = ytmSessionRepository,
-            telemetryEnabled = { 
-                kotlinx.coroutines.runBlocking { 
-                    userPreferencesRepository.ytmTelemetryEnabledFlow.first() 
-                } 
-            }
+    fun provideYTMusicWebSocketClient(): com.theveloper.pixelplay.data.network.ytmusic.YTMusicWebSocketClient {
+        return com.theveloper.pixelplay.data.network.ytmusic.YTMusicWebSocketClient()
+    }
+
+    @Provides
+    @Singleton
+    fun provideNewPipeExtractor(): com.theveloper.pixelplay.data.network.ytmusic.NewPipeYTMusicExtractor {
+        return com.theveloper.pixelplay.data.network.ytmusic.NewPipeYTMusicExtractor()
+    }
+    
+    @Provides
+    @Singleton
+    fun provideYTMusicRepository(
+        webSocketClient: com.theveloper.pixelplay.data.network.ytmusic.YTMusicWebSocketClient,
+        newPipeExtractor: com.theveloper.pixelplay.data.network.ytmusic.NewPipeYTMusicExtractor
+    ): com.theveloper.pixelplay.data.network.ytmusic.YTMusicRepository {
+        return com.theveloper.pixelplay.data.network.ytmusic.YTMusicRepository(
+            webSocketClient = webSocketClient,
+            newPipeExtractor = newPipeExtractor
         )
-        
-        val customClient = okHttpClient.newBuilder()
-            .addInterceptor(ytMusicInterceptor)
-            .build()
-            
-        return Retrofit.Builder()
-            .baseUrl("https://music.youtube.com/youtubei/v1/")
-            .client(customClient)
-            .addConverterFactory(GsonConverterFactory.create())
-            .build()
-            .create(com.theveloper.pixelplay.data.network.ytmusic.YTMusicApi::class.java)
     }
 
     /**

@@ -1126,7 +1126,7 @@ class MusicService : MediaLibraryService() {
                 if (ytmLoudness != null) {
                     // YTM LoudnessDB represents how much louder the track is than target.
                     // ReplayGain is the offset needed to reach target, so we invert it.
-                    ReplayGainManager.ReplayGainValues(trackGainDb = -ytmLoudness)
+                    com.theveloper.pixelplay.data.media.ReplayGainManager.ReplayGainValues(trackGainDb = -ytmLoudness)
                 } else {
                     replayGainManager.readReplayGain(filePath!!)
                 }

@@ -191,6 +191,9 @@ class MainActivity : ComponentActivity() {
         }
         super.onCreate(savedInstanceState)
 
+        // Start YouTube Music Python service
+        com.theveloper.pixelplay.data.service.YTMusicPythonService.start(this)
+
         // MD3 Optimization: Release Splash Screen immediately to render UI skeleton.
         // Data loading is handled via optimistic UI and smooth transitions.
         splashScreen.setKeepOnScreenCondition { false }

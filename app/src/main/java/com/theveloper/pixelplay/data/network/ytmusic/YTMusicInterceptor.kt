@@ -41,8 +41,13 @@ class YTMusicInterceptor(
             .header("User-Agent",
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
                 "AppleWebKit/537.36 (KHTML, like Gecko) " +
-                "Chrome/124.0.0.0 Safari/537.36"
+                "Chrome/131.0.0.0 Safari/537.36"
             )
+            .header("Accept", "*/*")
+            .header("Accept-Language", "en-US,en;q=0.9")
+            .header("Sec-Fetch-Dest", "empty")
+            .header("Sec-Fetch-Mode", "same-origin")
+            .header("Sec-Fetch-Site", "same-origin")
             .apply {
                 if (sapisidHash != null) {
                     header("Authorization", "SAPISIDHASH $sapisidHash")
