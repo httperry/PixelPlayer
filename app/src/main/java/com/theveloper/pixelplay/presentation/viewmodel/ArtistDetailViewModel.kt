@@ -12,6 +12,7 @@ import com.theveloper.pixelplay.data.model.Artist
 import com.theveloper.pixelplay.data.model.Song
 import com.theveloper.pixelplay.data.repository.ArtistImageRepository
 import com.theveloper.pixelplay.data.repository.MusicRepository
+import com.theveloper.pixelplay.data.network.ytmusic.YTMusicRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -35,7 +36,9 @@ data class ArtistDetailUiState(
     val albumSections: List<ArtistAlbumSection> = emptyList(),
     val effectiveImageUrl: String? = null,
     val isLoading: Boolean = false,
-    val error: String? = null
+    val error: String? = null,
+    val ytmBio: String? = null,
+    val ytmMonthlyListeners: String? = null
 )
 
 @Immutable
@@ -52,6 +55,7 @@ class ArtistDetailViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val musicRepository: MusicRepository,
     private val artistImageRepository: ArtistImageRepository,
+    private val ytMusicRepository: YTMusicRepository,
     val themeStateHolder: ThemeStateHolder,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
@@ -140,8 +144,7 @@ class ArtistDetailViewModel @Inject constructor(
                             }
                         } else null
 
-                        // 3) Atomically publish state + pre-warmed color scheme.
-                        //    Both flows update before the Compose frame runs, so no intermediate null frame.
+                        // 3) Atomically publish initial state + pre-warmed color scheme.
                         _artistColorScheme.value = newScheme
                         _uiState.value = ArtistDetailUiState(
                             artist = artist.copy(
@@ -152,6 +155,22 @@ class ArtistDetailViewModel @Inject constructor(
                             effectiveImageUrl = effectiveUrl,
                             isLoading = false
                         )
+                        
+                        // 4) Background fetch YTM Artist Profile for bio and monthly listeners
+                        viewModelScope.launch {
+                            val channelId = ytMusicRepository.searchArtists(artist.name)
+                            if (channelId != null) {
+                                val profile = ytMusicRepository.getArtistProfile(channelId)
+                                if (profile != null) {
+                                    _uiState.update { 
+                                        it.copy(
+                                            ytmBio = profile.bio,
+                                            ytmMonthlyListeners = profile.monthlyListeners
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
 
             } catch (e: Exception) {

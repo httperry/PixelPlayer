@@ -8,9 +8,12 @@ import com.theveloper.pixelplay.data.repository.MusicRepository
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
+import com.theveloper.pixelplay.data.network.ytmusic.YTMusicRepository
+import com.theveloper.pixelplay.data.network.ytmusic.YTMSessionRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -36,7 +39,9 @@ import javax.inject.Singleton
  */
 @Singleton
 class SearchStateHolder @Inject constructor(
-    private val musicRepository: MusicRepository
+    private val musicRepository: MusicRepository,
+    private val ytMusicRepository: YTMusicRepository,
+    private val ytSessionRepository: YTMSessionRepository
 ) {
     private companion object {
         const val SEARCH_DEBOUNCE_MS = 300L
@@ -91,8 +96,36 @@ class SearchStateHolder @Inject constructor(
 
                     try {
                         val currentFilter = _selectedSearchFilter.value
-                        val resultsList = withContext(Dispatchers.IO) {
+                        val baseResults = withContext(Dispatchers.IO) {
                             musicRepository.searchAll(normalizedQuery, currentFilter).first()
+                        }
+                        
+                        val resultsList = withContext(Dispatchers.IO) {
+                            val cookies = ytSessionRepository.getCookies()
+                            if (!cookies.isNullOrBlank()) {
+                                // Concurrent YTM requests
+                                val ytSongsDeferred = async { 
+                                    if (currentFilter == SearchFilterType.ALL || currentFilter == SearchFilterType.SONGS) 
+                                        ytMusicRepository.searchSongs(normalizedQuery) 
+                                    else null 
+                                }
+                                val ytArtistsDeferred = async { 
+                                    if (currentFilter == SearchFilterType.ALL || currentFilter == SearchFilterType.ARTISTS) 
+                                        ytMusicRepository.searchArtists(normalizedQuery) 
+                                    else null 
+                                }
+
+                                val ytSongs = ytSongsDeferred.await()?.songs?.map { SearchResultItem.SongItem(it) } ?: emptyList()
+                                val ytArtists = ytArtistsDeferred.await()?.map { SearchResultItem.ArtistItem(it) } ?: emptyList()
+                                
+                                val merged = baseResults.toMutableList()
+                                // Interlace them or just add at the beginning
+                                merged.addAll(0, ytArtists)
+                                merged.addAll(0, ytSongs)
+                                merged
+                            } else {
+                                baseResults
+                            }
                         }
 
                         if (request.requestId != latestSearchRequestId.get()) {

@@ -109,6 +109,12 @@
             android:label="Jellyfin Login"
             android:theme="@style/Theme.PixelPlay" />
 
+        <activity
+            android:name=".presentation.ytmusic.auth.YTLoginActivity"
+            android:exported="false"
+            android:label="YouTube Music Login"
+            android:theme="@style/Theme.PixelPlay" />
+
 
         <activity
             android:name=".ExternalPlayerActivity"
@@ -232,6 +238,17 @@
             android:name=".data.service.http.MediaFileHttpServerService"
             android:foregroundServiceType="mediaPlayback"
             android:exported="false" />
+            
+        <service
+            android:name=".data.worker.YTCacheDownloadService"
+            android:foregroundServiceType="dataSync"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="androidx.media3.exoplayer.downloadService.action.RESTART" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </service>
+        
         <service
             android:name=".data.service.wear.WatchTransferForegroundService"
             android:foregroundServiceType="dataSync"

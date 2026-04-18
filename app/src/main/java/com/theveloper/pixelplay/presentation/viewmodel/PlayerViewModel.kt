@@ -214,6 +214,7 @@ class PlayerViewModel @Inject constructor(
     private val themePreferencesRepository: ThemePreferencesRepository,
     private val albumArtThemeDao: AlbumArtThemeDao,
     val syncManager: SyncManager, // Inyectar SyncManager
+    val crowdSyncManager: com.theveloper.pixelplay.data.network.crowd.CrowdSyncManager, // Inject CrowdSyncManager
 
     private val dualPlayerEngine: DualPlayerEngine,
     private val appShortcutManager: AppShortcutManager,
@@ -4087,6 +4088,7 @@ class PlayerViewModel @Inject constructor(
         castStateHolder.onCleared()
         searchStateHolder.onCleared()
         aiStateHolder.onCleared()
+        crowdSyncManager.disconnect()
         libraryStateHolder.onCleared()
         sleepTimerStateHolder.onCleared()
         connectivityStateHolder.onCleared()

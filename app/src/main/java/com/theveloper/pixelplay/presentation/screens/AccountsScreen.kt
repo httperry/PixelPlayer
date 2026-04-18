@@ -81,6 +81,7 @@ import com.theveloper.pixelplay.presentation.jellyfin.auth.JellyfinLoginActivity
 import com.theveloper.pixelplay.presentation.navidrome.auth.NavidromeLoginActivity
 import com.theveloper.pixelplay.presentation.qqmusic.auth.QqMusicLoginActivity
 import com.theveloper.pixelplay.presentation.telegram.auth.TelegramLoginActivity
+import com.theveloper.pixelplay.presentation.ytmusic.auth.YTLoginActivity
 import com.theveloper.pixelplay.presentation.viewmodel.AccountsViewModel
 import com.theveloper.pixelplay.presentation.viewmodel.ExternalAccountUiModel
 import com.theveloper.pixelplay.presentation.viewmodel.ExternalServiceAccount
@@ -637,6 +638,14 @@ private fun servicePalette(service: ExternalServiceAccount): ServicePalette {
             primaryActionContainer = Color(0xFFE3F2FD),
             primaryActionTint = Color(0xFF1565C0)
         )
+        ExternalServiceAccount.YOUTUBE_MUSIC -> ServicePalette(
+            iconContainer = Color(0xFFFF0000),
+            iconTint = Color.White,
+            statusContainer = Color(0xFFFFEBEE),
+            statusTint = Color(0xFFC62828),
+            primaryActionContainer = Color(0xFFFFCDD2),
+            primaryActionTint = Color(0xFFB71C1C)
+        )
     }
 }
 
@@ -648,6 +657,7 @@ private fun accountIcon(service: ExternalServiceAccount): ImageVector {
         ExternalServiceAccount.QQ_MUSIC -> Icons.Rounded.MusicNote
         ExternalServiceAccount.NAVIDROME -> Icons.Rounded.CloudQueue
         ExternalServiceAccount.JELLYFIN -> Icons.Rounded.CloudQueue
+        ExternalServiceAccount.YOUTUBE_MUSIC -> Icons.Rounded.MusicNote
     }
 }
 
@@ -702,6 +712,7 @@ private fun serviceTitle(service: ExternalServiceAccount): String {
         ExternalServiceAccount.QQ_MUSIC -> "QQ Music"
         ExternalServiceAccount.NAVIDROME -> "Subsonic"
         ExternalServiceAccount.JELLYFIN -> "Jellyfin"
+        ExternalServiceAccount.YOUTUBE_MUSIC -> "YouTube Music"
     }
 }
 
@@ -763,6 +774,12 @@ private fun openService(
                     intent = Intent(context, JellyfinLoginActivity::class.java)
                 )
             }
+        }
+        ExternalServiceAccount.YOUTUBE_MUSIC -> {
+            safeStartActivity(
+                context = context,
+                intent = Intent(context, YTLoginActivity::class.java)
+            )
         }
     }
 }

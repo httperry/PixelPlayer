@@ -1106,9 +1106,13 @@ class MusicService : MediaLibraryService() {
         val mediaId = mediaItem.mediaId
         val filePath = mediaItem.mediaMetadata.extras
             ?.getString(MediaItemBuilder.EXTERNAL_EXTRA_FILE_PATH)
+            
+        // Look for Youtube Music loudness DB injection
+        val ytmLoudness = mediaItem.mediaMetadata.extras
+            ?.getFloat("EXTERNAL_EXTRA_LOUDNESS_DB")
 
-        if (filePath.isNullOrBlank()) {
-            Timber.tag(TAG).d("ReplayGain: No file path for track, keeping user-selected volume")
+        if (filePath.isNullOrBlank() && ytmLoudness == null) {
+            Timber.tag(TAG).d("ReplayGain: No file path or loudness for track, keeping user-selected volume")
             if (!engine.isTransitionRunning()) {
                 setPlayerVolume(player, userSelectedVolume)
             }
@@ -1119,7 +1123,13 @@ class MusicService : MediaLibraryService() {
         // Read ReplayGain tags on IO thread to avoid blocking main
         replayGainJob = serviceScope.launch {
             val rgValues = withContext(Dispatchers.IO) {
-                replayGainManager.readReplayGain(filePath)
+                if (ytmLoudness != null) {
+                    // YTM LoudnessDB represents how much louder the track is than target.
+                    // ReplayGain is the offset needed to reach target, so we invert it.
+                    ReplayGainManager.ReplayGainValues(trackGainDb = -ytmLoudness)
+                } else {
+                    replayGainManager.readReplayGain(filePath!!)
+                }
             }
 
             if (requestToken != replayGainRequestToken) {

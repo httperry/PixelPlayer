@@ -6,6 +6,7 @@ import com.theveloper.pixelplay.data.gdrive.GDriveRepository
 import com.theveloper.pixelplay.data.jellyfin.JellyfinRepository
 import com.theveloper.pixelplay.data.navidrome.NavidromeRepository
 import com.theveloper.pixelplay.data.netease.NeteaseRepository
+import com.theveloper.pixelplay.data.network.ytmusic.YTMSessionRepository
 import com.theveloper.pixelplay.data.qqmusic.QqMusicRepository
 import com.theveloper.pixelplay.data.repository.MusicRepository
 import com.theveloper.pixelplay.data.telegram.TelegramRepository
@@ -28,7 +29,8 @@ enum class ExternalServiceAccount {
     NETEASE,
     QQ_MUSIC,
     NAVIDROME,
-    JELLYFIN
+    JELLYFIN,
+    YOUTUBE_MUSIC
 }
 
 data class ExternalAccountUiModel(
@@ -52,7 +54,8 @@ class AccountsViewModel @Inject constructor(
     private val neteaseRepository: NeteaseRepository,
     private val qqMusicRepository: QqMusicRepository,
     private val navidromeRepository: NavidromeRepository,
-    private val jellyfinRepository: JellyfinRepository
+    private val jellyfinRepository: JellyfinRepository,
+    private val ytmSessionRepository: YTMSessionRepository
 ) : ViewModel() {
 
     private val loggingOutServices = MutableStateFlow<Set<ExternalServiceAccount>>(emptySet())
@@ -101,6 +104,13 @@ class AccountsViewModel @Inject constructor(
         connected to playlistCount
     }
 
+    // YTM: simple login-state + stream quality label
+    private val ytmStateFlow = kotlinx.coroutines.flow.flow {
+        val loggedIn = ytmSessionRepository.isLoggedIn()
+        val email = ytmSessionRepository.getLoginEmail()
+        emit(loggedIn to (email ?: ""))
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false to "")
+
     val uiState: StateFlow<AccountsUiState> = combine(
         combine(
             listOf(
@@ -112,14 +122,16 @@ class AccountsViewModel @Inject constructor(
                 jellyfinStateFlow
             )
         ) { it.toList() },
+        ytmStateFlow,
         loggingOutServices
-    ) { states, activeLogouts ->
+    ) { states, ytmState, activeLogouts ->
         val (telegramConnected, telegramChannelCount) = states[0] as Pair<Boolean, Int>
         val (gDriveConnected, gDriveFolderCount) = states[1] as Pair<Boolean, Int>
         val (neteaseConnected, neteasePlaylistCount) = states[2] as Pair<Boolean, Int>
         val (qqConnected, qqPlaylistCount) = states[3] as Pair<Boolean, Int>
         val (navidromeConnected, navidromePlaylistCount) = states[4] as Pair<Boolean, Int>
         val (jellyfinConnected, jellyfinPlaylistCount) = states[5] as Pair<Boolean, Int>
+        val (ytmConnected, ytmEmail) = ytmState
 
         val connectedAccounts = buildList {
             if (telegramConnected) {
@@ -224,6 +236,18 @@ class AccountsViewModel @Inject constructor(
                     )
                 )
             }
+            if (ytmConnected) {
+                add(
+                    ExternalAccountUiModel(
+                        service = ExternalServiceAccount.YOUTUBE_MUSIC,
+                        title = "YouTube Music",
+                        accountLabel = ytmEmail.takeIf { it.isNotBlank() }
+                            ?: "Premium account connected",
+                        syncedContentLabel = "256kbps AAC · Watchtime sync active",
+                        isLoggingOut = ExternalServiceAccount.YOUTUBE_MUSIC in activeLogouts
+                    )
+                )
+            }
         }
 
         val disconnectedServices = buildList {
@@ -233,6 +257,7 @@ class AccountsViewModel @Inject constructor(
             if (!qqConnected) add(ExternalServiceAccount.QQ_MUSIC)
             if (!navidromeConnected) add(ExternalServiceAccount.NAVIDROME)
             if (!jellyfinConnected) add(ExternalServiceAccount.JELLYFIN)
+            if (!ytmConnected) add(ExternalServiceAccount.YOUTUBE_MUSIC)
         }
 
         AccountsUiState(
@@ -259,6 +284,7 @@ class AccountsViewModel @Inject constructor(
                         ExternalServiceAccount.QQ_MUSIC -> qqMusicRepository.logout()
                         ExternalServiceAccount.NAVIDROME -> navidromeRepository.logout()
                         ExternalServiceAccount.JELLYFIN -> jellyfinRepository.logout()
+                        ExternalServiceAccount.YOUTUBE_MUSIC -> ytmSessionRepository.clearSession()
                     }
                 }
             } finally {

@@ -644,6 +644,29 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    // ---------------------------------------------------------------------------
+    // YTM / Cloud Sync preferences — exposed as independent StateFlows
+    // so the CLOUD_SYNC settings screen can observe them without polluting SettingsUiState
+    // ---------------------------------------------------------------------------
+
+    val ytmWatchtimeSyncEnabled: StateFlow<Boolean> =
+        userPreferencesRepository.ytmWatchtimeSyncEnabledFlow
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
+    val ytmTelemetryEnabled: StateFlow<Boolean> =
+        userPreferencesRepository.ytmTelemetryEnabledFlow
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
+    val ytmCacheSizeMb: StateFlow<Int> =
+        userPreferencesRepository.ytmCacheSizeMbFlow
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 1024)
+
+    val crowdStreamingEnabled: StateFlow<Boolean> =
+        userPreferencesRepository.crowdStreamingEnabledFlow
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+
+
     fun setAppRebrandDialogShown(wasShown: Boolean) {
         viewModelScope.launch {
             userPreferencesRepository.setAppRebrandDialogShown(wasShown)
@@ -797,6 +820,24 @@ class SettingsViewModel @Inject constructor(
             userPreferencesRepository.setKeepPlayingInBackground(enabled)
         }
     }
+
+    fun setYtmWatchtimeSyncEnabled(enabled: Boolean) {
+        viewModelScope.launch { userPreferencesRepository.setYtmWatchtimeSyncEnabled(enabled) }
+    }
+
+    fun setYtmTelemetryEnabled(enabled: Boolean) {
+        viewModelScope.launch { userPreferencesRepository.setYtmTelemetryEnabled(enabled) }
+    }
+
+    fun setYtmCacheSizeMb(mb: Int) {
+        viewModelScope.launch { userPreferencesRepository.setYtmCacheSizeMb(mb) }
+    }
+
+    fun setCrowdStreamingEnabled(enabled: Boolean) {
+        viewModelScope.launch { userPreferencesRepository.setCrowdStreamingEnabled(enabled) }
+    }
+
+
 
     fun setDisableCastAutoplay(disabled: Boolean) {
         viewModelScope.launch {

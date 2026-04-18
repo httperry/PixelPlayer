@@ -18,6 +18,7 @@ import com.theveloper.pixelplay.data.model.LyricsSourcePreference
 import com.theveloper.pixelplay.data.model.Song
 import com.theveloper.pixelplay.data.network.lyrics.LrcLibApiService
 import com.theveloper.pixelplay.data.network.lyrics.LrcLibResponse
+import com.theveloper.pixelplay.data.network.lyrics.BetterLyricsProvider
 import com.theveloper.pixelplay.utils.LyricsImportSecurity
 import com.theveloper.pixelplay.utils.LyricsImportValidationResult
 import com.theveloper.pixelplay.utils.LogUtils
@@ -81,6 +82,7 @@ private data class RemoteSearchBatch(
 class LyricsRepositoryImpl @Inject constructor(
     @ApplicationContext private val context: Context,
     private val lrcLibApiService: LrcLibApiService,
+    private val betterLyricsProvider: BetterLyricsProvider,
     private val lyricsDao: com.theveloper.pixelplay.data.database.LyricsDao,
     private val okHttpClient: OkHttpClient
 ) : LyricsRepository {
@@ -343,6 +345,26 @@ class LyricsRepositoryImpl @Inject constructor(
             Log.d(TAG, "===== LOADED LYRICS FROM JSON DISK CACHE =====")
             return@withContext cachedJson
         }
+
+        // --- NEW: BetterLyrics Waterfall ---
+        try {
+            val cleanArtist = song.displayArtist.trim().replace(Regex("\\(.*?\\)"), "").trim()
+            val cleanTitle = song.title.trim().replace(Regex("\\(.*?\\)"), "").trim()
+            val betterLyrics = betterLyricsProvider.fetchLyrics(cleanTitle, cleanArtist, song.duration.toInt())
+            if (betterLyrics != null) {
+                val rawLyrics = betterLyrics.syncedLyrics ?: betterLyrics.plainLyrics
+                if (!rawLyrics.isNullOrBlank()) {
+                    val parsedLyrics = LyricsUtils.parseLyrics(rawLyrics).copy(areFromRemote = true)
+                    if (parsedLyrics.isValid()) {
+                        Log.d(TAG, "===== LOADED LYRICS FROM BETTER-LYRICS WATERFALL =====")
+                        return@withContext parsedLyrics
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "BetterLyrics fetch failed: ${e.message}")
+        }
+        // -----------------------------------
 
         // Apply rate limiting
         val currentTime = System.currentTimeMillis()

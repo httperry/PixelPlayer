@@ -63,8 +63,10 @@ class DualPlayerEngine @Inject constructor(
     private val qqMusicStreamProxy: QqMusicStreamProxy,
     private val navidromeStreamProxy: NavidromeStreamProxy,
     private val jellyfinStreamProxy: com.theveloper.pixelplay.data.jellyfin.JellyfinStreamProxy,
+    private val ytMusicRepository: com.theveloper.pixelplay.data.network.ytmusic.YTMusicRepository,
     private val telegramCacheManager: com.theveloper.pixelplay.data.telegram.TelegramCacheManager,
-    private val connectivityStateHolder: com.theveloper.pixelplay.presentation.viewmodel.ConnectivityStateHolder
+    private val connectivityStateHolder: com.theveloper.pixelplay.presentation.viewmodel.ConnectivityStateHolder,
+    private val exoPlayerCache: androidx.media3.datasource.cache.Cache
 ) {
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     var hiFiModeEnabled: Boolean = false
@@ -159,7 +161,7 @@ class DualPlayerEngine @Inject constructor(
                         val nextUri = nextItem.localConfiguration?.uri
                         if (nextUri?.scheme == "telegram") {
                             telegramRepository.preResolveTelegramUri(nextUri.toString())
-                        } else if (nextUri?.scheme == "netease" || nextUri?.scheme == "qqmusic" || nextUri?.scheme == "navidrome" || nextUri?.scheme == "jellyfin") {
+                        } else if (nextUri?.scheme == "netease" || nextUri?.scheme == "qqmusic" || nextUri?.scheme == "navidrome" || nextUri?.scheme == "jellyfin" || nextUri?.scheme == "ytm") {
                             scope.launch { resolveCloudUri(nextUri) }
                         }
                     }
@@ -169,7 +171,7 @@ class DualPlayerEngine @Inject constructor(
                         val prevUri = prevItem.localConfiguration?.uri
                         if (prevUri?.scheme == "telegram") {
                             telegramRepository.preResolveTelegramUri(prevUri.toString())
-                        } else if (prevUri?.scheme == "netease" || prevUri?.scheme == "qqmusic" || prevUri?.scheme == "navidrome" || prevUri?.scheme == "jellyfin") {
+                        } else if (prevUri?.scheme == "netease" || prevUri?.scheme == "qqmusic" || prevUri?.scheme == "navidrome" || prevUri?.scheme == "jellyfin" || prevUri?.scheme == "ytm") {
                             scope.launch { resolveCloudUri(prevUri) }
                         }
                     }
@@ -330,7 +332,7 @@ class DualPlayerEngine @Inject constructor(
             override fun resolveDataSpec(dataSpec: DataSpec): DataSpec {
                 val uri = dataSpec.uri
                 val scheme = uri.scheme
-                if (scheme == "telegram" || scheme == "netease" || scheme == "qqmusic" || scheme == "navidrome" || scheme == "jellyfin") {
+                if (scheme == "telegram" || scheme == "netease" || scheme == "qqmusic" || scheme == "navidrome" || scheme == "jellyfin" || scheme == "ytm") {
                     val originalUri = uri.toString()
                     val resolved = resolvedUriCache[originalUri]
                     if (resolved != null) {
@@ -351,7 +353,14 @@ class DualPlayerEngine @Inject constructor(
         }
         
         val dataSourceFactory = DefaultDataSource.Factory(context)
-        val resolvingFactory = ResolvingDataSource.Factory(dataSourceFactory, resolver)
+        
+        // Wire the simple cache into the data source factory for offline caching
+        val cacheDataSourceFactory = androidx.media3.datasource.cache.CacheDataSource.Factory()
+            .setCache(exoPlayerCache)
+            .setUpstreamDataSourceFactory(dataSourceFactory)
+            .setFlags(androidx.media3.datasource.cache.CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+            
+        val resolvingFactory = ResolvingDataSource.Factory(cacheDataSourceFactory, resolver)
         val extractorsFactory = DefaultExtractorsFactory()
             // Some vendor-produced M4A files expose broken edit lists that make seek
             // drift or snap back. Ignore them so MP4-family local playback stays seekable.
@@ -468,6 +477,7 @@ class DualPlayerEngine @Inject constructor(
             "qqmusic" -> resolveQqMusicUriAsync(uriString)
             "navidrome" -> resolveNavidromeUriAsync(uriString)
             "jellyfin" -> resolveJellyfinUriAsync(uriString)
+            "ytm" -> resolveYtmUriAsync(uriString)
             else -> null
         }
 
@@ -605,6 +615,32 @@ class DualPlayerEngine @Inject constructor(
         return null
     }
 
+    private var cachedYtmLoudnessMap = java.util.concurrent.ConcurrentHashMap<String, Float>()
+
+    private suspend fun resolveYtmUriAsync(uriString: String): Uri? {
+        Timber.tag("DualPlayerEngine").d("Async resolving YTM URI: $uriString")
+        // uri format usually ytm://videoId
+        val videoId = uriString.removePrefix("ytm://")
+        return try {
+            val response = ytMusicRepository.getPlayerRawStream(videoId)
+            val audioUrl = response?.streamingData?.adaptiveFormats
+                ?.filter { it.mimeType.contains("audio/mp4") || it.mimeType.contains("audio/webm") }
+                ?.maxByOrNull { it.bitrate }?.url
+            
+            val loudness = response?.playerConfig?.audioConfig?.loudnessDb
+            if (loudness != null) {
+                cachedYtmLoudnessMap[uriString] = loudness
+            }
+
+            if (!audioUrl.isNullOrBlank()) {
+                Uri.parse(audioUrl)
+            } else null
+        } catch (e: Exception) {
+            Timber.tag("DualPlayerEngine").e(e, "Failed to resolve YTM URI")
+            null
+        }
+    }
+
     /**
      * Resolves a MediaItem's cloud URI (if any) and returns a copy with the resolved URI.
      * For non-cloud URIs, returns the original MediaItem unchanged.
@@ -612,15 +648,24 @@ class DualPlayerEngine @Inject constructor(
     suspend fun resolveMediaItem(mediaItem: MediaItem): MediaItem {
         val uri = mediaItem.localConfiguration?.uri ?: return mediaItem
         val scheme = uri.scheme
-        if (scheme != "telegram" && scheme != "netease" && scheme != "qqmusic" && scheme != "navidrome" && scheme != "jellyfin") return mediaItem
+        if (scheme != "telegram" && scheme != "netease" && scheme != "qqmusic" && scheme != "navidrome" && scheme != "jellyfin" && scheme != "ytm") return mediaItem
 
         val resolvedUri = resolveCloudUri(uri)
         if (resolvedUri == uri) return mediaItem // Resolution failed or not needed
 
-        // Rebuild MediaItem with resolved URI, preserving metadata
-        return mediaItem.buildUpon()
-            .setUri(resolvedUri)
-            .build()
+        // Inject YTM Loudness if we resolved it
+        val builder = mediaItem.buildUpon().setUri(resolvedUri)
+        val uriString = uri.toString()
+        if (scheme == "ytm" && cachedYtmLoudnessMap.containsKey(uriString)) {
+            val currentExtras = mediaItem.mediaMetadata.extras ?: android.os.Bundle()
+            currentExtras.putFloat("EXTERNAL_EXTRA_LOUDNESS_DB", cachedYtmLoudnessMap[uriString]!!)
+            val currentMetadata = mediaItem.mediaMetadata.buildUpon()
+                .setExtras(currentExtras)
+                .build()
+            builder.setMediaMetadata(currentMetadata)
+        }
+
+        return builder.build()
     }
 
     /**

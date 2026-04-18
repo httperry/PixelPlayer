@@ -54,6 +54,12 @@ enum class SettingsCategory(
         subtitle = "Export and recover your personal app data",
         iconRes = R.drawable.rounded_upload_file_24
     ),
+    CLOUD_SYNC(
+        id = "cloud_sync",
+        title = "Cloud & Streaming",
+        subtitle = "YouTube Music, watchtime sync, privacy, and cache",
+        iconRes = R.drawable.rounded_cast_24
+    ),
     DEVELOPER(
         id = "developer",
         title = "Developer Options",

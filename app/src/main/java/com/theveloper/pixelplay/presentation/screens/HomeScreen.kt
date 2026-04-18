@@ -119,6 +119,7 @@ fun HomeScreen(
     qqMusicViewModel: QqMusicDashboardViewModel = hiltViewModel(),
     navidromeViewModel: NavidromeDashboardViewModel = hiltViewModel(),
     jellyfinViewModel: JellyfinDashboardViewModel = hiltViewModel(),
+    ytMusicViewModel: com.theveloper.pixelplay.presentation.ytmusic.dashboard.YTMusicDashboardViewModel = hiltViewModel(),
     onOpenSidebar: () -> Unit
 ) {
     val context = LocalContext.current
@@ -353,6 +354,47 @@ fun HomeScreen(
                             },
                             playerViewModel = playerViewModel
                         )
+                    }
+                }
+
+                // YouTube Music Discovery Feed
+                val ytmHomeFeed by ytMusicViewModel.homeFeed.collectAsStateWithLifecycle()
+                if (ytmHomeFeed.isNotEmpty()) {
+                    items(
+                        count = ytmHomeFeed.size,
+                        key = { index -> "ytm_shelf_$index" },
+                        contentType = { "ytm_shelf" }
+                    ) { index ->
+                        val shelf = ytmHomeFeed[index]
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 8.dp)
+                        ) {
+                            Text(
+                                text = shelf.title,
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onBackground
+                            )
+                            Text(
+                                text = "From YouTube Music",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(Modifier.height(12.dp))
+                            // Reuse AlbumArtCollage to show the songs securely
+                            com.theveloper.pixelplay.presentation.components.AlbumArtCollage(
+                                modifier = Modifier.fillMaxWidth(),
+                                songs = shelf.songs,
+                                padding = 8.dp,
+                                height = 250.dp, // slightly smaller than Your Mix
+                                pattern = com.theveloper.pixelplay.data.preferences.CollagePattern.DIAGONAL_STACK,
+                                onSongClick = { song ->
+                                    playerViewModel.showAndPlaySong(song, shelf.songs, shelf.title)
+                                }
+                            )
+                        }
                     }
                 }
 

@@ -1069,7 +1069,176 @@ fun SettingsCategoryScreen(
                                 )
                             }
                         }
+                        SettingsCategory.CLOUD_SYNC -> {
+                            val ytmWatchtimeSyncEnabled by settingsViewModel.ytmWatchtimeSyncEnabled.collectAsStateWithLifecycle()
+                            val ytmTelemetryEnabled by settingsViewModel.ytmTelemetryEnabled.collectAsStateWithLifecycle()
+                            val ytmCacheSizeMb by settingsViewModel.ytmCacheSizeMb.collectAsStateWithLifecycle()
+                            val crowdStreamingEnabled by settingsViewModel.crowdStreamingEnabled.collectAsStateWithLifecycle()
+                            var cacheSizeDraft by remember(ytmCacheSizeMb) { mutableStateOf(ytmCacheSizeMb.toFloat()) }
+
+                            SettingsSubsection(title = "YouTube Music") {
+                                // Info card
+                                androidx.compose.material3.ElevatedCard(
+                                    shape = racra.compose.smooth_corner_rect_library.AbsoluteSmoothCornerShape(20.dp, 60),
+                                    colors = androidx.compose.material3.CardDefaults.elevatedCardColors(
+                                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                                    ),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(16.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Surface(
+                                            shape = racra.compose.smooth_corner_rect_library.AbsoluteSmoothCornerShape(12.dp, 60),
+                                            color = MaterialTheme.colorScheme.primary
+                                        ) {
+                                            Icon(
+                                                painter = painterResource(R.drawable.rounded_cast_24),
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.onPrimary,
+                                                modifier = Modifier.padding(8.dp).size(20.dp)
+                                            )
+                                        }
+                                        Column {
+                                            Text(
+                                                text = "Manage Account",
+                                                style = MaterialTheme.typography.titleSmall,
+                                                fontFamily = GoogleSansRounded,
+                                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Text(
+                                                text = "Sign in or manage your YouTube Music account from the Accounts screen.",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(4.dp))
+                            }
+
+                            SettingsSubsection(title = "Live Sync") {
+                                SwitchSettingItem(
+                                    title = "Live Watchtime Sync",
+                                    subtitle = "Sync your playback position with YouTube Music in real-time. Resume anywhere — on any device or in the browser.",
+                                    checked = ytmWatchtimeSyncEnabled,
+                                    onCheckedChange = { settingsViewModel.setYtmWatchtimeSyncEnabled(it) },
+                                    leadingIcon = {
+                                        Icon(
+                                            painter = painterResource(R.drawable.rounded_cast_24),
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.secondary
+                                        )
+                                    }
+                                )
+
+                                AnimatedVisibility(
+                                    visible = ytmWatchtimeSyncEnabled,
+                                    enter = expandVertically(animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f)) + fadeIn(animationSpec = spring(stiffness = 400f)),
+                                    exit = shrinkVertically(animationSpec = spring(stiffness = 500f)) + fadeOut(animationSpec = spring(stiffness = 500f))
+                                ) {
+                                    // Visual pulse indicator — shown only when sync is ON
+                                    Surface(
+                                        shape = racra.compose.smooth_corner_rect_library.AbsoluteSmoothCornerShape(14.dp, 60),
+                                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Column(modifier = Modifier.padding(16.dp)) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                            ) {
+                                                androidx.compose.material3.LoadingIndicator(
+                                                    modifier = Modifier.size(20.dp)
+                                                )
+                                                Text(
+                                                    text = "Heartbeat active · Syncing every 10s",
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    color = MaterialTheme.colorScheme.onSurface,
+                                                    fontFamily = GoogleSansRounded
+                                                )
+                                            }
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            LinearWavyProgressIndicator(
+                                                modifier = Modifier.fillMaxWidth()
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            SettingsSubsection(title = "Privacy") {
+                                SwitchSettingItem(
+                                    title = "Disable YTM Telemetry",
+                                    subtitle = "When ON, no watchtime data is sent to YouTube's servers. Your listening history will not update on YouTube Music.",
+                                    checked = !ytmTelemetryEnabled,
+                                    onCheckedChange = { settingsViewModel.setYtmTelemetryEnabled(!it) },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Outlined.Warning,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.secondary
+                                        )
+                                    }
+                                )
+                            }
+
+                            SettingsSubsection(title = "Stream Cache") {
+                                SliderSettingsItem(
+                                    label = "Local Cache Limit",
+                                    value = cacheSizeDraft,
+                                    valueRange = 256f..10240f,
+                                    steps = 38, // 256MB steps up to 10GB
+                                    onValueChange = { cacheSizeDraft = it },
+                                    onValueChangeFinished = {
+                                        val selected = cacheSizeDraft.toInt()
+                                        if (selected != ytmCacheSizeMb) {
+                                            settingsViewModel.setYtmCacheSizeMb(selected)
+                                        }
+                                    },
+                                    valueText = { value ->
+                                        val mb = value.toInt()
+                                        if (mb >= 1024) "${"%.1f".format(mb / 1024f)} GB"
+                                        else "${mb} MB"
+                                    }
+                                )
+                                SwitchSettingItem(
+                                    title = "Cache Recently Played",
+                                    subtitle = "Automatically cache recently listened songs for faster replays. Uses the limit set above.",
+                                    checked = ytmWatchtimeSyncEnabled, // reuse as placeholder — pull a dedicated pref if needed
+                                    onCheckedChange = { settingsViewModel.setYtmWatchtimeSyncEnabled(it) },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Outlined.PlayCircle,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.secondary
+                                        )
+                                    }
+                                )
+                            }
+
+                            SettingsSubsection(title = "Crowd Streaming", addBottomSpace = false) {
+                                SwitchSettingItem(
+                                    title = "Crowd Streaming Room",
+                                    subtitle = "Listen in sync with others in real-time. All participants hear the same timestamp simultaneously.",
+                                    checked = crowdStreamingEnabled,
+                                    onCheckedChange = { settingsViewModel.setCrowdStreamingEnabled(it) },
+                                    leadingIcon = {
+                                        Icon(
+                                            painter = painterResource(R.drawable.rounded_queue_music_24),
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.secondary
+                                        )
+                                    }
+                                )
+                            }
+                        }
                         SettingsCategory.DEVELOPER -> {
+
                             SettingsSubsection(title = "Experiments") {
                                 SettingsItem(
                                     title = "Experimental",

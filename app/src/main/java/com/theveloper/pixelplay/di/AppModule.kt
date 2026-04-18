@@ -43,6 +43,7 @@ import com.theveloper.pixelplay.data.repository.MusicRepository
 import com.theveloper.pixelplay.data.repository.MusicRepositoryImpl
 import com.theveloper.pixelplay.data.repository.SongRepository
 import com.theveloper.pixelplay.data.repository.TransitionRepository
+import kotlinx.coroutines.flow.first
 import com.theveloper.pixelplay.data.repository.TransitionRepositoryImpl
 import com.theveloper.pixelplay.data.repository.FolderTreeBuilder
 import dagger.Module
@@ -294,13 +295,15 @@ object AppModule {
         @ApplicationContext context: Context,
         lrcLibApiService: LrcLibApiService,
         lyricsDao: LyricsDao,
-        okHttpClient: OkHttpClient
+        okHttpClient: OkHttpClient,
+        betterLyricsProvider: com.theveloper.pixelplay.data.network.lyrics.BetterLyricsProvider
     ): LyricsRepository {
         return LyricsRepositoryImpl(
             context = context,
             lrcLibApiService = lrcLibApiService,
             lyricsDao = lyricsDao,
-            okHttpClient = okHttpClient
+            okHttpClient = okHttpClient,
+            betterLyricsProvider = betterLyricsProvider
         )
     }
 
@@ -503,6 +506,34 @@ object AppModule {
             .client(okHttpClient)
             .addConverterFactory(GsonConverterFactory.create())
             .build()
+    }
+
+    @Provides
+    @Singleton
+    fun provideYTMusicApi(
+        okHttpClient: OkHttpClient,
+        ytmSessionRepository: com.theveloper.pixelplay.data.network.ytmusic.YTMSessionRepository,
+        userPreferencesRepository: UserPreferencesRepository
+    ): com.theveloper.pixelplay.data.network.ytmusic.YTMusicApi {
+        val ytMusicInterceptor = com.theveloper.pixelplay.data.network.ytmusic.YTMusicInterceptor(
+            cookieProvider = ytmSessionRepository,
+            telemetryEnabled = { 
+                kotlinx.coroutines.runBlocking { 
+                    userPreferencesRepository.ytmTelemetryEnabledFlow.first() 
+                } 
+            }
+        )
+        
+        val customClient = okHttpClient.newBuilder()
+            .addInterceptor(ytMusicInterceptor)
+            .build()
+            
+        return Retrofit.Builder()
+            .baseUrl("https://music.youtube.com/youtubei/v1/")
+            .client(customClient)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+            .create(com.theveloper.pixelplay.data.network.ytmusic.YTMusicApi::class.java)
     }
 
     /**

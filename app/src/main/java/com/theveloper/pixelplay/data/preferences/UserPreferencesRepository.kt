@@ -228,6 +228,12 @@ constructor(
         // ReplayGain
         val REPLAYGAIN_ENABLED = booleanPreferencesKey("replaygain_enabled")
         val REPLAYGAIN_USE_ALBUM_GAIN = booleanPreferencesKey("replaygain_use_album_gain")
+
+        // YouTube Music / Cloud Sync Settings
+        val YTM_WATCHTIME_SYNC_ENABLED = booleanPreferencesKey("ytm_watchtime_sync_enabled")
+        val YTM_TELEMETRY_ENABLED = booleanPreferencesKey("ytm_telemetry_enabled")
+        val YTM_CACHE_SIZE_MB = intPreferencesKey("ytm_cache_size_mb")
+        val CROWD_STREAMING_ENABLED = booleanPreferencesKey("crowd_streaming_enabled")
     }
 
     val appRebrandDialogShownFlow: Flow<Boolean> =
@@ -766,6 +772,46 @@ constructor(
     }
 
     // ===== End ReplayGain =====
+
+    // ===== YouTube Music / Cloud Sync Preferences =====
+
+    val ytmWatchtimeSyncEnabledFlow: Flow<Boolean> =
+        dataStore.data.map { preferences ->
+            preferences[PreferencesKeys.YTM_WATCHTIME_SYNC_ENABLED] ?: true
+        }
+
+    val ytmTelemetryEnabledFlow: Flow<Boolean> =
+        dataStore.data.map { preferences ->
+            preferences[PreferencesKeys.YTM_TELEMETRY_ENABLED] ?: true
+        }
+
+    val ytmCacheSizeMbFlow: Flow<Int> =
+        dataStore.data.map { preferences ->
+            preferences[PreferencesKeys.YTM_CACHE_SIZE_MB] ?: 1024 // default 1GB
+        }
+
+    val crowdStreamingEnabledFlow: Flow<Boolean> =
+        dataStore.data.map { preferences ->
+            preferences[PreferencesKeys.CROWD_STREAMING_ENABLED] ?: false
+        }
+
+    suspend fun setYtmWatchtimeSyncEnabled(enabled: Boolean) {
+        dataStore.edit { it[PreferencesKeys.YTM_WATCHTIME_SYNC_ENABLED] = enabled }
+    }
+
+    suspend fun setYtmTelemetryEnabled(enabled: Boolean) {
+        dataStore.edit { it[PreferencesKeys.YTM_TELEMETRY_ENABLED] = enabled }
+    }
+
+    suspend fun setYtmCacheSizeMb(mb: Int) {
+        dataStore.edit { it[PreferencesKeys.YTM_CACHE_SIZE_MB] = mb.coerceIn(256, 10240) }
+    }
+
+    suspend fun setCrowdStreamingEnabled(enabled: Boolean) {
+        dataStore.edit { it[PreferencesKeys.CROWD_STREAMING_ENABLED] = enabled }
+    }
+
+    // ===== End YTM =====
 
     val allowedDirectoriesFlow: Flow<Set<String>> =
             dataStore.data.map { preferences ->

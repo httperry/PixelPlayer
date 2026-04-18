@@ -42,6 +42,7 @@ data class Song(
     val qqMusicMid: String? = null, // QQ Music song MID
     val navidromeId: String? = null, // Navidrome song ID
     val jellyfinId: String? = null, // Jellyfin item ID
+    val ytmusicId: String? = null, // YouTube Music video ID
 ) : Parcelable {
     /**
      * Returns the display string for artists.
@@ -97,7 +98,8 @@ data class Song(
                 gdriveFileId = null,
                 qqMusicMid = null,
                 navidromeId = null,
-                jellyfinId = null
+                jellyfinId = null,
+                ytmusicId = null
             )
         }
     }

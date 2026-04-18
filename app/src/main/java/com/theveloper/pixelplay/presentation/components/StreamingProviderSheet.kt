@@ -9,6 +9,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowForwardIos
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -111,6 +112,18 @@ fun StreamingProviderSheet(
                         shape = providerSegmentItemShape,
                         onClick = {
                             context.startActivity(Intent(context, TelegramLoginActivity::class.java))
+                            onDismissRequest()
+                        }
+                    )
+                    
+                    ProviderRow(
+                        iconPainter = androidx.compose.ui.graphics.vector.rememberVectorPainter(image = Icons.Rounded.PlayArrow),
+                        iconTint = Color(0xFFFF0000), // YouTube Red
+                        title = "YouTube Music Premium",
+                        subtitle = "Sign in to access your mix and catalog",
+                        shape = providerSegmentItemShape,
+                        onClick = {
+                            context.startActivity(Intent(context, com.theveloper.pixelplay.presentation.ytmusic.auth.YTLoginActivity::class.java))
                             onDismissRequest()
                         }
                     )

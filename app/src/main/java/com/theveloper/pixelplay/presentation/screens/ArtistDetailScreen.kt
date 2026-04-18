@@ -4,6 +4,7 @@ package com.theveloper.pixelplay.presentation.screens
 
 import com.theveloper.pixelplay.presentation.navigation.navigateSafely
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.theveloper.pixelplay.R
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -301,6 +302,16 @@ fun ArtistDetailScreen(
                             bottom = MiniPlayerHeight + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 8.dp
                         )
                     ) {
+                        if (uiState.ytmBio != null) {
+                            item(key = "ytm_bio", contentType = "ytm_bio") {
+                                YTMArtistBioCard(
+                                    bio = uiState.ytmBio!!,
+                                    monthlyListeners = uiState.ytmMonthlyListeners,
+                                    modifier = Modifier.padding(bottom = 16.dp)
+                                )
+                            }
+                        }
+
                         albumSections.forEachIndexed { index, section ->
                             if (section.songs.isEmpty()) return@forEachIndexed
 
@@ -1164,8 +1175,76 @@ private fun MusicIconPattern(modifier: Modifier = Modifier) {
             modifier = Modifier
                 .align(Alignment.Center)
                 .offset(x = 72.dp, y = 34.dp)
-                .size(45.dp)
-                .graphicsLayer { rotationZ = -8f }
+            .size(45.dp)
+            .graphicsLayer { rotationZ = -8f }
         )
+    }
+}
+
+@Composable
+private fun YTMArtistBioCard(
+    bio: String,
+    monthlyListeners: String?,
+    modifier: Modifier = Modifier
+) {
+    var isExpanded by remember { mutableStateOf(false) }
+    
+    Card(
+        shape = AbsoluteSmoothCornerShape(24.dp, 60),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        ),
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable { isExpanded = !isExpanded }
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    painter = androidx.compose.ui.res.painterResource(id = R.drawable.ic_launcher_foreground), // Fallback or YTM icon if available
+                    contentDescription = "YouTube Music",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+                Text(
+                    text = "From YouTube Music",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold
+                )
+                if (monthlyListeners != null) {
+                    Spacer(modifier = Modifier.weight(1f))
+                    Text(
+                        text = monthlyListeners,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            
+            Text(
+                text = bio,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = if (isExpanded) Int.MAX_VALUE else 3,
+                overflow = TextOverflow.Ellipsis
+            )
+            
+            if (!isExpanded) {
+                Text(
+                    text = "Read more",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.align(Alignment.CenterHorizontally)
+                )
+            }
+        }
     }
 }

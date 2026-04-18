@@ -23,6 +23,7 @@ import com.theveloper.pixelplay.data.database.SongEntity
 import com.theveloper.pixelplay.data.database.SourceType
 import com.theveloper.pixelplay.data.database.TelegramDao // Added
 import com.theveloper.pixelplay.data.database.resolveAlbumArtUri
+import com.theveloper.pixelplay.data.database.toEntity
 import com.theveloper.pixelplay.data.database.serializeArtistRefs
 import com.theveloper.pixelplay.data.model.ArtistRef
 import com.theveloper.pixelplay.data.navidrome.NavidromeRepository
@@ -74,7 +75,9 @@ constructor(
         private val lyricsRepository: LyricsRepository,
         private val telegramDao: TelegramDao,
         private val neteaseDao: NeteaseDao,
-        private val navidromeRepository: NavidromeRepository
+        private val navidromeRepository: NavidromeRepository,
+        private val localPlaylistDao: com.theveloper.pixelplay.data.database.LocalPlaylistDao,
+        private val ytMusicRepository: com.theveloper.pixelplay.data.network.ytmusic.YTMusicRepository
 ) : CoroutineWorker(appContext, workerParams) {
 
     private val contentResolver: ContentResolver = appContext.contentResolver
@@ -383,6 +386,8 @@ constructor(
                     } else {
                         Log.d(TAG, "Skipping Navidrome sync — not logged in.")
                     }
+
+                    syncYTMusicData()
 
                     // Recalculate total
                     val finalTotalSongs = musicDao.getSongCount().first()
@@ -1730,6 +1735,35 @@ constructor(
             )
         } catch (e: Exception) {
             Log.e(TAG, "Failed to sync Navidrome data", e)
+        }
+    }
+
+    private suspend fun syncYTMusicData() {
+        Log.i(TAG, "Syncing YT Music Library Playlists...")
+        try {
+            val ytmPlaylists = ytMusicRepository.getUserPlaylists()
+            if (ytmPlaylists.isEmpty()) {
+                Log.d(TAG, "No YT Music playlists found or error fetching.")
+                // Note: We don't delete existing YTM playlists if fetch fails, 
+                // in case it's a transient network error.
+                return
+            }
+
+            // Fetch current playlists to identify old YTM playlists
+            val currentPlaylists = localPlaylistDao.getAllPlaylistsNow()
+            val oldYtmIds = currentPlaylists.filter { it.source == "YTM" }.map { it.id }.toSet()
+            val newYtmIds = ytmPlaylists.map { it.id }.toSet()
+
+            val toDelete = oldYtmIds - newYtmIds
+            toDelete.forEach { localPlaylistDao.deletePlaylist(it) }
+
+            ytmPlaylists.forEach { playlist -> 
+                localPlaylistDao.upsertPlaylist(playlist.toEntity()) 
+                localPlaylistDao.replacePlaylistSongs(playlist.id, playlist.songIds)
+            }
+            Log.i(TAG, "Synced ${ytmPlaylists.size} YT Music Playlists successfully.")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error syncing YT Music playlists", e)
         }
     }
 }

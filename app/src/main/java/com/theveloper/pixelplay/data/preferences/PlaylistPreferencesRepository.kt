@@ -15,10 +15,13 @@ import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
+import com.theveloper.pixelplay.data.network.ytmusic.YTMusicRepository
+
 @Singleton
 class PlaylistPreferencesRepository @Inject constructor(
     private val localPlaylistDao: LocalPlaylistDao,
-    private val userPreferencesRepository: UserPreferencesRepository
+    private val userPreferencesRepository: UserPreferencesRepository,
+    private val ytMusicRepository: YTMusicRepository
 ) {
     private val migrationMutex = Mutex()
     @Volatile
@@ -80,6 +83,22 @@ class PlaylistPreferencesRepository @Inject constructor(
             coverShapeDetail4 = coverShapeDetail4,
             source = source,
         )
+        
+        if (source == "YTM") {
+            try {
+                // Try to create it remotely first
+                val remoteId = ytMusicRepository.createPlaylist(name, "", songIds)
+                if (remoteId != null) {
+                    val remotePlaylist = newPlaylist.copy(id = remoteId)
+                    localPlaylistDao.upsertPlaylist(remotePlaylist.toEntity())
+                    localPlaylistDao.replacePlaylistSongs(remotePlaylist.id, remotePlaylist.songIds)
+                    return remotePlaylist
+                }
+            } catch (e: Exception) {
+                // If remote fails, fallback to local UUID insertion below
+            }
+        }
+
         localPlaylistDao.upsertPlaylist(newPlaylist.toEntity())
         localPlaylistDao.replacePlaylistSongs(newPlaylist.id, newPlaylist.songIds)
         return newPlaylist
@@ -113,6 +132,16 @@ class PlaylistPreferencesRepository @Inject constructor(
         val existing = userPlaylistsFlow.first().find { it.id == playlistId } ?: return
         val merged = (existing.songIds + songIdsToAdd).distinct()
         updatePlaylist(existing.copy(songIds = merged))
+
+        if (existing.source == "YTM") {
+            songIdsToAdd.forEach { songId ->
+                try {
+                    ytMusicRepository.addVideoToPlaylist(existing.id, songId)
+                } catch (e: Exception) {
+                    // Ignore transient errors; local update already succeeded
+                }
+            }
+        }
     }
 
     suspend fun addOrRemoveSongFromPlaylists(songId: String, playlistIds: List<String>): MutableList<String> {
