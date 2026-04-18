@@ -148,7 +148,8 @@ object AppModule {
             PixelPlayDatabase.MIGRATION_36_37,
             PixelPlayDatabase.MIGRATION_37_38,
             PixelPlayDatabase.MIGRATION_38_39,
-            PixelPlayDatabase.MIGRATION_39_40
+            PixelPlayDatabase.MIGRATION_39_40,
+            PixelPlayDatabase.MIGRATION_40_41
         )
             .addCallback(PixelPlayDatabase.createRuntimeArtifactsCallback())
             .setJournalMode(RoomDatabase.JournalMode.WRITE_AHEAD_LOGGING)
@@ -244,6 +245,12 @@ object AppModule {
     @Provides
     fun provideJellyfinDao(database: PixelPlayDatabase): com.theveloper.pixelplay.data.database.JellyfinDao {
         return database.jellyfinDao()
+    }
+
+    @Singleton
+    @Provides
+    fun provideYTMusicDao(database: PixelPlayDatabase): YTMusicDao {
+        return database.ytmusicDao()
     }
 
     @Provides
@@ -522,13 +529,27 @@ object AppModule {
     
     @Provides
     @Singleton
+    fun provideYTMusicStreamProxy(
+        newPipeExtractor: com.theveloper.pixelplay.data.network.ytmusic.NewPipeYTMusicExtractor,
+        okHttpClient: OkHttpClient
+    ): com.theveloper.pixelplay.data.network.ytmusic.YTMusicStreamProxy {
+        return com.theveloper.pixelplay.data.network.ytmusic.YTMusicStreamProxy(
+            newPipeExtractor = newPipeExtractor,
+            okHttpClient = okHttpClient
+        )
+    }
+    
+    @Provides
+    @Singleton
     fun provideYTMusicRepository(
         webSocketClient: com.theveloper.pixelplay.data.network.ytmusic.YTMusicWebSocketClient,
-        newPipeExtractor: com.theveloper.pixelplay.data.network.ytmusic.NewPipeYTMusicExtractor
+        newPipeExtractor: com.theveloper.pixelplay.data.network.ytmusic.NewPipeYTMusicExtractor,
+        ytMusicDao: com.theveloper.pixelplay.data.database.YTMusicDao
     ): com.theveloper.pixelplay.data.network.ytmusic.YTMusicRepository {
         return com.theveloper.pixelplay.data.network.ytmusic.YTMusicRepository(
             webSocketClient = webSocketClient,
-            newPipeExtractor = newPipeExtractor
+            newPipeExtractor = newPipeExtractor,
+            ytMusicDao = ytMusicDao
         )
     }
 

@@ -253,6 +253,12 @@
             android:name=".data.service.wear.WatchTransferForegroundService"
             android:foregroundServiceType="dataSync"
             android:exported="false" />
+            
+        <service
+            android:name=".data.service.YTMusicPythonService"
+            android:foregroundServiceType="dataSync"
+            android:exported="false" />
+            
         <meta-data
             android:name="preloaded_fonts"
             android:resource="@array/preloaded_fonts" />

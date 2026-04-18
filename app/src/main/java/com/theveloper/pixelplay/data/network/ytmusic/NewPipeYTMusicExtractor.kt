@@ -53,11 +53,18 @@ class NewPipeYTMusicExtractor @Inject constructor() {
                 return@withContext null
             }
             
-            // Get best quality audio stream
+            // Log all available streams for debugging
+            Log.d(TAG, "Available audio streams for $videoId:")
+            audioStreams.forEach { stream ->
+                Log.d(TAG, "  - ${stream.format?.name} @ ${stream.averageBitrate} bps (${stream.format?.mimeType})")
+            }
+            
+            // Get best quality audio stream (highest bitrate)
+            // YouTube Music Premium offers up to 256kbps Opus
             val bestStream = audioStreams.maxByOrNull { it.averageBitrate }
             
             if (bestStream != null) {
-                Log.d(TAG, "Found stream: ${bestStream.format?.name} @ ${bestStream.averageBitrate} bps")
+                Log.d(TAG, "Selected BEST stream: ${bestStream.format?.name} @ ${bestStream.averageBitrate} bps")
                 return@withContext bestStream.url
             } else {
                 Log.e(TAG, "Could not select best stream for: $videoId")
@@ -88,7 +95,7 @@ class NewPipeYTMusicExtractor @Inject constructor() {
             
             return@withContext audioStreams.map { stream ->
                 AudioStreamInfo(
-                    url = stream.url,
+                    url = stream.url ?: "",
                     format = stream.format?.name ?: "unknown",
                     bitrate = stream.averageBitrate,
                     mimeType = stream.format?.mimeType ?: "audio/unknown"

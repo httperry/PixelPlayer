@@ -68,11 +68,20 @@ android {
     // Chaquopy Python configuration
     extensions.configure<com.chaquo.python.ChaquopyExtension> {
         defaultConfig {
+            // Use Python 3.11 (supports all ABIs including armeabi-v7a)
             version = "3.11"
+            
+            // Tell Chaquopy to use your system Python 3.12 for BUILD TIME
+            // (Chaquopy will still bundle Python 3.11 for runtime)
+            buildPython("/usr/local/bin/python3")
+            
             pip {
+                // Install packages compatible with Python 3.11
                 install("ytmusicapi==1.8.1")
                 install("websockets==12.0")
-                install("cryptography==42.0.0")
+                install("requests>=2.31.0")
+                // Note: cryptography removed - not compatible with Chaquopy
+                // WebSocket server modified to work without encryption (localhost only)
             }
         }
     }
@@ -384,10 +393,10 @@ dependencies {
     implementation(libs.logging.interceptor)
 
     // NewPipe Extractor for YouTube Music streaming
-    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.24.5")
+    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.1")
     
-    // yt-dlp Android for comprehensive YouTube Music support
-    implementation("com.github.yausername.youtubedl-android:library:0.16.0")
+    // yt-dlp Android for comprehensive YouTube Music support - removed due to unavailability
+    // implementation("com.github.yausername.youtubedl-android:library:0.16.0")
     
     // WebSocket client
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
@@ -435,4 +444,20 @@ dependencies {
 
 tasks.withType<Test> {
     useJUnitPlatform()
+}
+
+// Task to clean Python cache and force rebuild with Python 3.11
+tasks.register("cleanPythonCache") {
+    group = "build"
+    description = "Deletes cached Python environment to force Chaquopy to use Python 3.11"
+    doLast {
+        val pythonDir = file("${layout.buildDirectory.get().asFile}/python")
+        if (pythonDir.exists()) {
+            pythonDir.deleteRecursively()
+            println("✓ Deleted Python cache at ${pythonDir.absolutePath}")
+            println("✓ Next build will use Python 3.11 as configured")
+        } else {
+            println("ℹ Python cache directory doesn't exist yet")
+        }
+    }
 }

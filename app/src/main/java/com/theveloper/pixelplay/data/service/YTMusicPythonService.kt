@@ -201,15 +201,20 @@ class YTMusicPythonService : Service() {
                 
                 // Initialize Python
                 if (!Python.isStarted()) {
+                    Log.d(TAG, "Initializing Python...")
                     Python.start(AndroidPlatform(applicationContext))
+                    Log.d(TAG, "Python initialized successfully")
                 }
                 
                 val python = Python.getInstance()
+                Log.d(TAG, "Getting ytmusic_websocket_server module...")
                 val module = python.getModule("ytmusic_websocket_server")
+                Log.d(TAG, "Module loaded successfully")
                 
                 // Run server
                 withContext(Dispatchers.IO) {
                     Log.d(TAG, "Python WebSocket server starting on port 8765...")
+                    Log.d(TAG, "Calling run_server with encryption key: ${if (encryptionKey != null) "present" else "null"}")
                     module.callAttr("run_server", encryptionKey)
                 }
                 
@@ -220,13 +225,16 @@ class YTMusicPythonService : Service() {
                 releaseWakeLock()
                 
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to start Python server", e)
+                Log.e(TAG, "Failed to start Python server: ${e.message}", e)
+                Log.e(TAG, "Exception type: ${e.javaClass.name}")
+                e.printStackTrace()
                 isServerRunning = false
                 releaseWakeLock()
                 
                 // Retry after delay
                 delay(5000)
                 if (isServiceRunning) {
+                    Log.d(TAG, "Retrying Python server start...")
                     startPythonServer()
                 }
             }
@@ -261,8 +269,7 @@ class YTMusicPythonService : Service() {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("YouTube Music")
             .setContentText(status)
-            .setSmallIcon(R.drawable.ic_music_note)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setSmallIcon(android.R.drawable.ic_dialog_info) // Use system icon
             .setOngoing(true)
             .setShowWhen(false)
             .setOnlyAlertOnce(true) // Don't alert on updates

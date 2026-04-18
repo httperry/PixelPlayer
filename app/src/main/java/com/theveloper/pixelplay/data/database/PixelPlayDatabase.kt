@@ -34,9 +34,12 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         JellyfinSongEntity::class,
         JellyfinPlaylistEntity::class,
         AiCacheEntity::class,
-        AiUsageEntity::class
+        AiUsageEntity::class,
+        YTMusicSongEntity::class,
+        YTMusicPlaylistEntity::class,
+        YTMusicPlaylistSongEntity::class
     ],
-    version = 40,
+    version = 41,
     exportSchema = true
 )
 abstract class PixelPlayDatabase : RoomDatabase() {
@@ -56,6 +59,7 @@ abstract class PixelPlayDatabase : RoomDatabase() {
     abstract fun jellyfinDao(): JellyfinDao
     abstract fun aiCacheDao(): AiCacheDao
     abstract fun aiUsageDao(): AiUsageDao
+    abstract fun ytmusicDao(): YTMusicDao
 
     companion object {
         // Gap-bridging no-op migrations for missing version ranges.
@@ -622,6 +626,58 @@ abstract class PixelPlayDatabase : RoomDatabase() {
                     "CREATE INDEX IF NOT EXISTS index_songs_parent_directory_path_source_type_id " +
                         "ON songs(parent_directory_path, source_type, id)"
                 )
+            }
+        }
+
+        val MIGRATION_40_41 = object : Migration(40, 41) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Create YTMusic songs cache table
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS ytmusic_songs (
+                        video_id TEXT PRIMARY KEY NOT NULL,
+                        title TEXT NOT NULL,
+                        artist TEXT NOT NULL,
+                        album TEXT,
+                        duration_seconds INTEGER NOT NULL,
+                        thumbnail_url TEXT NOT NULL,
+                        is_explicit INTEGER NOT NULL DEFAULT 0,
+                        year INTEGER,
+                        cached_at INTEGER NOT NULL,
+                        last_accessed INTEGER NOT NULL
+                    )
+                """)
+                
+                // Create YTMusic playlists cache table
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS ytmusic_playlists (
+                        playlist_id TEXT PRIMARY KEY NOT NULL,
+                        title TEXT NOT NULL,
+                        description TEXT,
+                        thumbnail_url TEXT,
+                        track_count INTEGER NOT NULL DEFAULT 0,
+                        author TEXT,
+                        is_editable INTEGER NOT NULL DEFAULT 0,
+                        cached_at INTEGER NOT NULL,
+                        last_synced INTEGER NOT NULL
+                    )
+                """)
+                
+                // Create YTMusic playlist-song junction table
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS ytmusic_playlist_songs (
+                        playlist_id TEXT NOT NULL,
+                        video_id TEXT NOT NULL,
+                        position INTEGER NOT NULL,
+                        added_at INTEGER NOT NULL,
+                        PRIMARY KEY (playlist_id, video_id, position)
+                    )
+                """)
+                
+                // Create indices for better query performance
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_ytmusic_songs_last_accessed ON ytmusic_songs(last_accessed)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_ytmusic_playlists_last_synced ON ytmusic_playlists(last_synced)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_ytmusic_playlist_songs_playlist_id ON ytmusic_playlist_songs(playlist_id)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_ytmusic_playlist_songs_video_id ON ytmusic_playlist_songs(video_id)")
             }
         }
 

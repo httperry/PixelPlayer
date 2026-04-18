@@ -1,63 +1,33 @@
 """
-YouTube Music WebSocket Server with Encryption
+YouTube Music WebSocket Server (No Encryption)
 
-Fast, secure, always-running background service for YouTube Music API.
+Fast, always-running background service for YouTube Music API.
 
 Features:
 - WebSocket communication (faster than HTTP)
-- AES-256 encryption (secure local communication)
 - Async/await (non-blocking)
 - Pre-initialized ytmusicapi (instant responses)
 - Automatic reconnection support
+- No encryption (localhost-only, safe for local communication)
 """
 
 import asyncio
 import json
 import time
-import base64
 from typing import Optional, Dict, Any
 from ytmusicapi import YTMusic
-from cryptography.fernet import Fernet
 import websockets
 from websockets.server import serve
 
 # Global state
 ytmusic: Optional[YTMusic] = None
 is_authenticated = False
-encryption_key: Optional[bytes] = None
-cipher: Optional[Fernet] = None
 
 # Performance cache
 cache: Dict[str, Dict[str, Any]] = {
     'library': {'data': None, 'timestamp': 0, 'ttl': 300},
     'playlists': {'data': None, 'timestamp': 0, 'ttl': 300},
 }
-
-# ============================================================================
-# ENCRYPTION
-# ============================================================================
-
-def init_encryption(key_b64: str):
-    """Initialize encryption with base64 key from Android"""
-    global encryption_key, cipher
-    encryption_key = base64.b64decode(key_b64)
-    cipher = Fernet(encryption_key)
-    print("🔐 Encryption initialized")
-
-def encrypt_message(message: str) -> str:
-    """Encrypt message for transmission"""
-    if cipher:
-        encrypted = cipher.encrypt(message.encode())
-        return base64.b64encode(encrypted).decode()
-    return message
-
-def decrypt_message(encrypted: str) -> str:
-    """Decrypt received message"""
-    if cipher:
-        decoded = base64.b64decode(encrypted)
-        decrypted = cipher.decrypt(decoded)
-        return decrypted.decode()
-    return encrypted
 
 # ============================================================================
 # CACHE HELPERS
@@ -345,30 +315,27 @@ async def websocket_handler(websocket):
     try:
         async for message in websocket:
             try:
-                # Decrypt message
-                decrypted = decrypt_message(message)
-                message_data = json.loads(decrypted)
+                # Parse JSON message (no encryption)
+                message_data = json.loads(message)
                 
                 # Handle message
                 response = await handle_message(message_data)
                 
-                # Encrypt and send response
+                # Send response as JSON
                 response_json = json.dumps(response)
-                encrypted_response = encrypt_message(response_json)
-                
-                await websocket.send(encrypted_response)
+                await websocket.send(response_json)
                 
             except json.JSONDecodeError as e:
                 error_response = json.dumps({
                     'error': f'Invalid JSON: {str(e)}'
                 })
-                await websocket.send(encrypt_message(error_response))
+                await websocket.send(error_response)
             
             except Exception as e:
                 error_response = json.dumps({
                     'error': f'Handler error: {str(e)}'
                 })
-                await websocket.send(encrypt_message(error_response))
+                await websocket.send(error_response)
     
     except websockets.exceptions.ConnectionClosed:
         print(f"📱 Client disconnected: {websocket.remote_address}")
@@ -376,16 +343,17 @@ async def websocket_handler(websocket):
     except Exception as e:
         print(f"❌ WebSocket error: {e}")
 
-async def start_server(encryption_key_b64: str):
+async def start_server(encryption_key_b64: str = None):
     """Start WebSocket server"""
-    # Initialize encryption
-    init_encryption(encryption_key_b64)
+    # No encryption needed for localhost
+    if encryption_key_b64:
+        print("⚠️  Encryption key provided but not used (localhost only)")
     
     # Start server
     async with serve(websocket_handler, "127.0.0.1", 8765):
         print("🎵 YouTube Music WebSocket Server")
         print("📡 Listening on ws://127.0.0.1:8765")
-        print("🔐 Encryption: AES-256 (Fernet)")
+        print("� No encryption (localhost only)")
         print("✅ Ready for connections!")
         
         # Keep server running
@@ -395,6 +363,6 @@ async def start_server(encryption_key_b64: str):
 # ENTRY POINT
 # ============================================================================
 
-def run_server(encryption_key_b64: str):
+def run_server(encryption_key_b64: str = None):
     """Run WebSocket server (called from Android)"""
     asyncio.run(start_server(encryption_key_b64))

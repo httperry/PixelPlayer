@@ -97,13 +97,27 @@ class SearchStateHolder @Inject constructor(
 
                     try {
                         val currentFilter = _selectedSearchFilter.value
+                        
+                        // Step 1: Show local results immediately (fast)
                         val baseResults = withContext(Dispatchers.IO) {
                             musicRepository.searchAll(normalizedQuery, currentFilter).first()
                         }
                         
-                        val resultsList = withContext(Dispatchers.IO) {
-                            val cookies = ytSessionRepository.getCookies()
-                            if (!cookies.isNullOrBlank()) {
+                        // Check if this request is still valid
+                        if (request.requestId != latestSearchRequestId.get()) {
+                            return@collectLatest
+                        }
+                        
+                        // Emit local results immediately so UI shows them right away
+                        _searchResults.value = baseResults.toImmutableList()
+                        
+                        // Step 2: Add YTM results if available (slower, but non-blocking)
+                        val cookies = withContext(Dispatchers.IO) {
+                            ytSessionRepository.getCookies()
+                        }
+                        
+                        if (!cookies.isNullOrBlank()) {
+                            withContext(Dispatchers.IO) {
                                 // Concurrent YTM requests
                                 val ytSongsDeferred = async { 
                                     if (currentFilter == SearchFilterType.ALL || currentFilter == SearchFilterType.SONGS) 
@@ -119,30 +133,38 @@ class SearchStateHolder @Inject constructor(
                                 val ytSongs = ytSongsDeferred.await()?.songs?.map { SearchResultItem.SongItem(it) } ?: emptyList()
                                 val ytArtists = ytArtistsDeferred.await()?.map { SearchResultItem.ArtistItem(it) } ?: emptyList()
                                 
-                                val merged = baseResults.toMutableList()
-                                // Interlace them or just add at the beginning
-                                merged.addAll(0, ytArtists)
-                                merged.addAll(0, ytSongs)
-                                merged
-                            } else {
-                                baseResults
+                                // Debug logging
+                                Log.d("SearchStateHolder", "YTMusic search results for '$normalizedQuery':")
+                                Log.d("SearchStateHolder", "  - Songs: ${ytSongs.size}")
+                                Log.d("SearchStateHolder", "  - Artists: ${ytArtists.size}")
+                                ytArtists.take(3).forEach { artistItem ->
+                                    val artist = (artistItem as SearchResultItem.ArtistItem).artist
+                                    Log.d("SearchStateHolder", "    • ${artist.name} (ID: ${artist.id})")
+                                }
+                                
+                                // Check again if this request is still valid before updating
+                                if (request.requestId == latestSearchRequestId.get()) {
+                                    val merged = baseResults.toMutableList()
+                                    // Add YTM results at the beginning
+                                    merged.addAll(0, ytArtists)
+                                    merged.addAll(0, ytSongs)
+                                    
+                                    Log.d("SearchStateHolder", "  - Total merged results: ${merged.size}")
+                                    
+                                    // Update with combined results
+                                    _searchResults.value = merged.toImmutableList()
+                                }
                             }
-                        }
-
-                        if (request.requestId != latestSearchRequestId.get()) {
-                            return@collectLatest
-                        }
-
-                        val immutableResults = resultsList.toImmutableList()
-                        if (_searchResults.value != immutableResults) {
-                            _searchResults.value = immutableResults
                         }
                     } catch (_: CancellationException) {
                         // Superseded by a newer query; ignore.
                     } catch (e: Exception) {
                         if (request.requestId == latestSearchRequestId.get()) {
                             Log.e("SearchStateHolder", "Error performing search for query: $normalizedQuery", e)
-                            _searchResults.value = persistentListOf()
+                            // Keep existing results instead of clearing them
+                            if (_searchResults.value.isEmpty()) {
+                                _searchResults.value = persistentListOf()
+                            }
                         }
                     }
                 }

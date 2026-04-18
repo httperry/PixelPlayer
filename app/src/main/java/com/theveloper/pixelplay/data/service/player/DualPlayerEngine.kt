@@ -63,6 +63,7 @@ class DualPlayerEngine @Inject constructor(
     private val qqMusicStreamProxy: QqMusicStreamProxy,
     private val navidromeStreamProxy: NavidromeStreamProxy,
     private val jellyfinStreamProxy: com.theveloper.pixelplay.data.jellyfin.JellyfinStreamProxy,
+    private val ytMusicStreamProxy: com.theveloper.pixelplay.data.network.ytmusic.YTMusicStreamProxy,
     private val ytMusicRepository: com.theveloper.pixelplay.data.network.ytmusic.YTMusicRepository,
     private val telegramCacheManager: com.theveloper.pixelplay.data.telegram.TelegramCacheManager,
     private val connectivityStateHolder: com.theveloper.pixelplay.presentation.viewmodel.ConnectivityStateHolder,
@@ -332,7 +333,7 @@ class DualPlayerEngine @Inject constructor(
             override fun resolveDataSpec(dataSpec: DataSpec): DataSpec {
                 val uri = dataSpec.uri
                 val scheme = uri.scheme
-                if (scheme == "telegram" || scheme == "netease" || scheme == "qqmusic" || scheme == "navidrome" || scheme == "jellyfin" || scheme == "ytm") {
+                if (scheme == "telegram" || scheme == "netease" || scheme == "qqmusic" || scheme == "navidrome" || scheme == "jellyfin" || scheme == "ytmusic" || scheme == "ytm") {
                     val originalUri = uri.toString()
                     val resolved = resolvedUriCache[originalUri]
                     if (resolved != null) {
@@ -477,6 +478,7 @@ class DualPlayerEngine @Inject constructor(
             "qqmusic" -> resolveQqMusicUriAsync(uriString)
             "navidrome" -> resolveNavidromeUriAsync(uriString)
             "jellyfin" -> resolveJellyfinUriAsync(uriString)
+            "ytmusic" -> resolveYTMusicUriAsync(uriString)
             "ytm" -> resolveYtmUriAsync(uriString)
             else -> null
         }
@@ -615,6 +617,32 @@ class DualPlayerEngine @Inject constructor(
         return null
     }
 
+    private suspend fun resolveYTMusicUriAsync(uriString: String): Uri? {
+        Timber.tag("DualPlayerEngine").d("Async resolving YouTube Music URI: $uriString")
+
+        val proxyReady = ytMusicStreamProxy.ensureReady(5_000L)
+        if (!proxyReady) {
+            Timber.tag("DualPlayerEngine").e("YTMusicStreamProxy not ready after timeout")
+            return null
+        }
+
+        // Pre-fetch the real stream URL now (network call) so the proxy cache is
+        // warm by the time ExoPlayer makes its HTTP request to the local proxy.
+        val warmUpSuccess = ytMusicStreamProxy.warmUpStreamUrl(uriString)
+        if (!warmUpSuccess) {
+            Timber.tag("DualPlayerEngine").e("Failed to warm up stream URL for: $uriString")
+            return null
+        }
+
+        val proxyUrl = ytMusicStreamProxy.resolveYTMusicUri(uriString)
+        if (!proxyUrl.isNullOrBlank()) {
+            return Uri.parse(proxyUrl)
+        }
+
+        Timber.tag("DualPlayerEngine").w("Failed to resolve YouTube Music URI: $uriString")
+        return null
+    }
+
     private var cachedYtmLoudnessMap = java.util.concurrent.ConcurrentHashMap<String, Float>()
 
     private suspend fun resolveYtmUriAsync(uriString: String): Uri? {
@@ -648,7 +676,7 @@ class DualPlayerEngine @Inject constructor(
     suspend fun resolveMediaItem(mediaItem: MediaItem): MediaItem {
         val uri = mediaItem.localConfiguration?.uri ?: return mediaItem
         val scheme = uri.scheme
-        if (scheme != "telegram" && scheme != "netease" && scheme != "qqmusic" && scheme != "navidrome" && scheme != "jellyfin" && scheme != "ytm") return mediaItem
+        if (scheme != "telegram" && scheme != "netease" && scheme != "qqmusic" && scheme != "navidrome" && scheme != "jellyfin" && scheme != "ytmusic" && scheme != "ytm") return mediaItem
 
         val resolvedUri = resolveCloudUri(uri)
         if (resolvedUri == uri) return mediaItem // Resolution failed or not needed

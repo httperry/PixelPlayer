@@ -398,9 +398,12 @@ fun FullPlayerContent(
 
     val onSongMetadataArtistClick = {
         val resolvedArtistId = currentSongArtists.firstOrNull()?.id ?: song.artistId
+        Timber.d("ArtistClick: currentSongArtists.size=${currentSongArtists.size}, resolvedArtistId=$resolvedArtistId, song.artistId=${song.artistId}")
         if (currentSongArtists.size > 1) {
+            Timber.d("ArtistClick: Showing artist picker with ${currentSongArtists.size} artists")
             showArtistPicker = true
         } else {
+            Timber.d("ArtistClick: Triggering navigation to artist $resolvedArtistId")
             playerViewModel.triggerArtistNavigationFromPlayer(resolvedArtistId)
         }
     }
@@ -2149,7 +2152,11 @@ private fun PlayerSongInfo(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
                     onClick = {
-                        if (isNavigatingToArtist) return@combinedClickable
+                        Timber.d("ArtistClick: Artist text clicked: $artist (artistId=$artistId)")
+                        if (isNavigatingToArtist) {
+                            Timber.d("ArtistClick: Already navigating, ignoring click")
+                            return@combinedClickable
+                        }
                         coroutineScope.launch {
                             isNavigatingToArtist = true
                             try {
@@ -2161,7 +2168,11 @@ private fun PlayerSongInfo(
                     },
 
                 onLongClick = {
-                    if (isNavigatingToArtist) return@combinedClickable
+                    Timber.d("ArtistClick: Artist text long-clicked: $artist (resolvedArtistId=$resolvedArtistId)")
+                    if (isNavigatingToArtist) {
+                        Timber.d("ArtistClick: Already navigating, ignoring long click")
+                        return@combinedClickable
+                    }
                     coroutineScope.launch {
                         isNavigatingToArtist = true
                         try {

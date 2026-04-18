@@ -141,50 +141,17 @@ class YTMusicWebSocketClient @Inject constructor() {
     }
 
     // ========================================================================
-    // ENCRYPTION
+    // ENCRYPTION (DISABLED - localhost only)
     // ========================================================================
 
     private fun encrypt(message: String): String {
-        if (encryptionKey == null) return message
-        
-        return try {
-            // Use Fernet-compatible encryption (simplified)
-            val cipher = Cipher.getInstance("AES/ECB/PKCS5Padding")
-            val keySpec = SecretKeySpec(encryptionKey, "AES")
-            cipher.init(Cipher.ENCRYPT_MODE, keySpec)
-            
-            val encrypted = cipher.doFinal(message.toByteArray())
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                Base64.getEncoder().encodeToString(encrypted)
-            } else {
-                android.util.Base64.encodeToString(encrypted, android.util.Base64.NO_WRAP)
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Encryption failed", e)
-            message
-        }
+        // No encryption for localhost communication
+        return message
     }
 
     private fun decrypt(encrypted: String): String {
-        if (encryptionKey == null) return encrypted
-        
-        return try {
-            val cipher = Cipher.getInstance("AES/ECB/PKCS5Padding")
-            val keySpec = SecretKeySpec(encryptionKey, "AES")
-            cipher.init(Cipher.DECRYPT_MODE, keySpec)
-            
-            val decoded = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                Base64.getDecoder().decode(encrypted)
-            } else {
-                android.util.Base64.decode(encrypted, android.util.Base64.NO_WRAP)
-            }
-            
-            val decrypted = cipher.doFinal(decoded)
-            String(decrypted)
-        } catch (e: Exception) {
-            Log.e(TAG, "Decryption failed", e)
-            encrypted
-        }
+        // No decryption for localhost communication
+        return encrypted
     }
 
     // ========================================================================
