@@ -7,6 +7,8 @@ for YouTube Music operations. It stays initialized and ready for instant respons
 Architecture:
 - Runs on localhost:8765
 - Pre-initialized ytmusicapi instance
+- yt-dlp for audio stream URL extraction (replaces NewPipe)
+- Progressive search with offset/limit pagination
 - Fast response times (no startup delay)
 - Handles authentication via cookies
 """
@@ -17,6 +19,13 @@ import json
 import os
 import threading
 import time
+
+# yt-dlp for stream URL extraction
+try:
+    import yt_dlp
+    YT_DLP_AVAILABLE = True
+except ImportError:
+    YT_DLP_AVAILABLE = False
 
 app = Flask(__name__)
 
@@ -31,6 +40,10 @@ cache = {
     'playlists': {'data': None, 'timestamp': 0, 'ttl': 300},
 }
 
+# Stream URL cache (yt-dlp URLs expire ~6h, cache 5h)
+stream_cache = {}
+STREAM_CACHE_TTL = 5 * 60 * 60  # 5 hours
+
 def get_cached(key):
     """Get cached data if still valid"""
     if cache[key]['data'] and (time.time() - cache[key]['timestamp']) < cache[key]['ttl']:
@@ -41,6 +54,15 @@ def set_cached(key, data):
     """Cache data with timestamp"""
     cache[key]['data'] = data
     cache[key]['timestamp'] = time.time()
+
+def get_cached_stream_url(video_id):
+    entry = stream_cache.get(video_id)
+    if entry and (time.time() - entry['timestamp']) < STREAM_CACHE_TTL:
+        return entry['url']
+    return None
+
+def set_cached_stream_url(video_id, url):
+    stream_cache[video_id] = {'url': url, 'timestamp': time.time()}
 
 # ============================================================================
 # AUTHENTICATION
@@ -85,26 +107,132 @@ def auth_status():
     })
 
 # ============================================================================
-# SEARCH
+# SEARCH (with offset/limit for progressive loading)
 # ============================================================================
 
 @app.route('/search', methods=['POST'])
 def search():
-    """Search YouTube Music"""
+    """
+    Search YouTube Music with progressive pagination.
+    
+    Body params:
+      query       - search string
+      filter      - 'songs', 'albums', 'artists', 'playlists'
+      limit       - max results per page (default 10)
+      offset      - skip first N results (default 0)
+    """
     try:
         data = request.json
         query = data.get('query', '')
-        filter_type = data.get('filter', 'songs')  # songs, albums, artists, playlists
-        limit = data.get('limit', 20)
+        filter_type = data.get('filter', 'songs')
+        limit = int(data.get('limit', 10))
+        offset = int(data.get('offset', 0))
         
         if not ytmusic:
             ytmusic_instance = YTMusic()
         else:
             ytmusic_instance = ytmusic
         
-        results = ytmusic_instance.search(query, filter=filter_type, limit=limit)
+        # Fetch total_needed items then slice
+        total_needed = offset + limit
+        fetch_limit = max(total_needed, 10)
         
-        return jsonify({'results': results})
+        results = ytmusic_instance.search(query, filter=filter_type, limit=fetch_limit)
+        results_page = results[offset:offset + limit] if offset < len(results) else []
+        
+        return jsonify({
+            'results': results_page,
+            'offset': offset,
+            'limit': limit,
+            'total_fetched': len(results)
+        })
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# ============================================================================
+# STREAM URL — yt-dlp (replaces NewPipe Extractor)
+# ============================================================================
+
+@app.route('/stream/<video_id>', methods=['GET'])
+def get_stream_url(video_id):
+    """
+    Get audio stream URL for a YouTube video ID using yt-dlp.
+    
+    yt-dlp is more reliable and actively maintained compared to NewPipe.
+    It handles YouTube's cipher obfuscation automatically.
+    
+    URL is cached for 5 hours (YouTube stream URLs expire after ~6 hours).
+    """
+    if not YT_DLP_AVAILABLE:
+        return jsonify({'error': 'yt-dlp not available'}), 503
+    
+    # Check cache first
+    cached_url = get_cached_stream_url(video_id)
+    if cached_url:
+        return jsonify({'stream_url': cached_url, 'cached': True})
+    
+    try:
+        url = f'https://www.youtube.com/watch?v={video_id}'
+        
+        ydl_opts = {
+            'format': 'bestaudio/best',
+            'noplaylist': True,
+            'quiet': True,
+            'no_warnings': True,
+            'skip_download': True,
+            'writesubtitles': False,
+            'writeautomaticsub': False
+        }
+        
+        stream_url = None
+        mime_type = 'audio/webm'
+        bitrate = 0
+        
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            if info:
+                # Try direct URL first
+                direct_url = info.get('url')
+                if direct_url:
+                    stream_url = direct_url
+                    ext = info.get('ext', 'webm')
+                    mime_type = f'audio/{ext}'
+                    bitrate = int((info.get('tbr', 0) or 0) * 1000)
+                else:
+                    # Pick best audio-only format
+                    formats = info.get('formats', [])
+                    audio_formats = [
+                        f for f in formats
+                        if f.get('acodec') not in (None, 'none')
+                        and f.get('vcodec') in (None, 'none', 'video only')
+                        and f.get('url')
+                    ]
+                    if not audio_formats:
+                        audio_formats = [f for f in formats if f.get('url')]
+                    
+                    if audio_formats:
+                        best = max(
+                            audio_formats,
+                            key=lambda f: f.get('tbr', 0) or f.get('abr', 0) or 0
+                        )
+                        stream_url = best['url']
+                        ext = best.get('ext', 'webm')
+                        mime_type = f'audio/{ext}'
+                        bitrate = int((best.get('tbr', 0) or best.get('abr', 0) or 0) * 1000)
+        
+        if not stream_url:
+            return jsonify({'error': f'No stream URL found for {video_id}'}), 404
+        
+        # Cache result
+        set_cached_stream_url(video_id, stream_url)
+        
+        return jsonify({
+            'stream_url': stream_url,
+            'mime_type': mime_type,
+            'bitrate': bitrate,
+            'cached': False
+        })
     
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -120,7 +248,6 @@ def get_library_songs():
         return jsonify({'error': 'Not authenticated'}), 401
     
     try:
-        # Check cache first
         cached = get_cached('library')
         if cached:
             return jsonify({'songs': cached})
@@ -140,7 +267,6 @@ def get_library_playlists():
         return jsonify({'error': 'Not authenticated'}), 401
     
     try:
-        # Check cache first
         cached = get_cached('playlists')
         if cached:
             return jsonify({'playlists': cached})
@@ -195,7 +321,6 @@ def create_playlist():
             video_ids=video_ids
         )
         
-        # Invalidate playlists cache
         cache['playlists']['data'] = None
         
         return jsonify({'playlist_id': playlist_id})
@@ -230,11 +355,9 @@ def remove_from_playlist(playlist_id):
         data = request.json
         video_ids = data.get('video_ids', [])
         
-        # Get playlist to find setVideoIds
         playlist = ytmusic.get_playlist(playlist_id)
         tracks = playlist.get('tracks', [])
         
-        # Find setVideoIds for the videos to remove
         set_video_ids = []
         for track in tracks:
             if track.get('videoId') in video_ids:
@@ -259,8 +382,6 @@ def like_song(video_id):
     
     try:
         ytmusic.rate_song(video_id, 'LIKE')
-        
-        # Invalidate library cache
         cache['library']['data'] = None
         
         return jsonify({'success': True})
@@ -276,8 +397,6 @@ def unlike_song(video_id):
     
     try:
         ytmusic.rate_song(video_id, 'INDIFFERENT')
-        
-        # Invalidate library cache
         cache['library']['data'] = None
         
         return jsonify({'success': True})
@@ -335,7 +454,8 @@ def health():
     return jsonify({
         'status': 'ok',
         'authenticated': is_authenticated,
-        'ytmusic_ready': ytmusic is not None
+        'ytmusic_ready': ytmusic is not None,
+        'yt_dlp_available': YT_DLP_AVAILABLE
     })
 
 # ============================================================================
@@ -349,5 +469,6 @@ def run_server():
 if __name__ == '__main__':
     print("🎵 YouTube Music API Server Starting...")
     print("📡 Listening on http://127.0.0.1:8765")
+    print(f"🎬 yt-dlp: {'✅ available' if YT_DLP_AVAILABLE else '❌ not available'}")
     print("✅ Ready for requests!")
     run_server()

@@ -28,6 +28,7 @@ import com.theveloper.pixelplay.data.database.MusicDao
 import com.theveloper.pixelplay.data.database.PixelPlayDatabase
 import com.theveloper.pixelplay.data.database.SearchHistoryDao
 import com.theveloper.pixelplay.data.database.TransitionDao
+import com.theveloper.pixelplay.data.database.YTMusicDao
 import com.theveloper.pixelplay.data.preferences.UserPreferencesRepository
 import com.theveloper.pixelplay.data.preferences.PlaylistPreferencesRepository
 import com.theveloper.pixelplay.data.preferences.dataStore
@@ -517,25 +518,26 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideYTMusicWebSocketClient(): com.theveloper.pixelplay.data.network.ytmusic.YTMusicWebSocketClient {
-        return com.theveloper.pixelplay.data.network.ytmusic.YTMusicWebSocketClient()
+    fun provideYTMusicWebSocketClient(
+        sessionRepository: com.theveloper.pixelplay.data.network.ytmusic.YTMSessionRepository
+    ): com.theveloper.pixelplay.data.network.ytmusic.YTMusicWebSocketClient {
+        return com.theveloper.pixelplay.data.network.ytmusic.YTMusicWebSocketClient(sessionRepository)
     }
 
-    @Provides
-    @Singleton
-    fun provideNewPipeExtractor(): com.theveloper.pixelplay.data.network.ytmusic.NewPipeYTMusicExtractor {
-        return com.theveloper.pixelplay.data.network.ytmusic.NewPipeYTMusicExtractor()
-    }
+    // NewPipeYTMusicExtractor removed — stream URL resolution now handled by
+    // yt-dlp in the Python backend. No separate provider needed.
     
     @Provides
     @Singleton
     fun provideYTMusicStreamProxy(
-        newPipeExtractor: com.theveloper.pixelplay.data.network.ytmusic.NewPipeYTMusicExtractor,
-        okHttpClient: OkHttpClient
+        webSocketClient: com.theveloper.pixelplay.data.network.ytmusic.YTMusicWebSocketClient,
+        okHttpClient: OkHttpClient,
+        @dagger.hilt.android.qualifiers.ApplicationContext context: android.content.Context
     ): com.theveloper.pixelplay.data.network.ytmusic.YTMusicStreamProxy {
         return com.theveloper.pixelplay.data.network.ytmusic.YTMusicStreamProxy(
-            newPipeExtractor = newPipeExtractor,
-            okHttpClient = okHttpClient
+            webSocketClient = webSocketClient,
+            okHttpClient = okHttpClient,
+            context = context
         )
     }
     
@@ -543,13 +545,13 @@ object AppModule {
     @Singleton
     fun provideYTMusicRepository(
         webSocketClient: com.theveloper.pixelplay.data.network.ytmusic.YTMusicWebSocketClient,
-        newPipeExtractor: com.theveloper.pixelplay.data.network.ytmusic.NewPipeYTMusicExtractor,
-        ytMusicDao: com.theveloper.pixelplay.data.database.YTMusicDao
+        ytMusicDao: com.theveloper.pixelplay.data.database.YTMusicDao,
+        @dagger.hilt.android.qualifiers.ApplicationContext context: android.content.Context
     ): com.theveloper.pixelplay.data.network.ytmusic.YTMusicRepository {
         return com.theveloper.pixelplay.data.network.ytmusic.YTMusicRepository(
             webSocketClient = webSocketClient,
-            newPipeExtractor = newPipeExtractor,
-            ytMusicDao = ytMusicDao
+            ytMusicDao = ytMusicDao,
+            context = context
         )
     }
 

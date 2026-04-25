@@ -15,13 +15,16 @@ import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
+import kotlinx.coroutines.flow.combine
+import com.theveloper.pixelplay.data.database.YTMusicDao
 import com.theveloper.pixelplay.data.network.ytmusic.YTMusicRepository
 
 @Singleton
 class PlaylistPreferencesRepository @Inject constructor(
     private val localPlaylistDao: LocalPlaylistDao,
     private val userPreferencesRepository: UserPreferencesRepository,
-    private val ytMusicRepository: YTMusicRepository
+    private val ytMusicRepository: YTMusicRepository,
+    private val ytMusicDao: YTMusicDao
 ) {
     private val migrationMutex = Mutex()
     @Volatile
@@ -29,12 +32,32 @@ class PlaylistPreferencesRepository @Inject constructor(
 
     val userPlaylistsFlow: Flow<List<Playlist>> = localPlaylistDao.observePlaylistsWithSongs()
         .onStart { ensureMigratedIfNeeded() }
-        .map { rows ->
-            rows.map { row ->
+        .combine(ytMusicDao.getAllPlaylists()) { rows, ytmEntities ->
+            val localPlaylists = rows.map { row ->
                 row.playlist.toPlaylist(
                     songIds = row.songs.sortedBy { it.sortOrder }.map { it.songId }
                 )
             }
+            // Merge YTM playlists from Room cache (populated by SyncWorker / getUserPlaylists)
+            val ytmPlaylists = ytmEntities.map { entity ->
+                Playlist(
+                    id = entity.playlistId,
+                    name = entity.title,
+                    songIds = emptyList(),
+                    createdAt = entity.cachedAt,
+                    source = "YTM",
+                    coverImageUri = entity.thumbnailUrl,
+                    externalTrackCount = entity.trackCount
+                )
+            }
+            // YTM playlists listed last so local ones take key precedence in distinctBy,
+            // but to ensure YTM source overrides any local duplicate, we put YTM first.
+            val ytmIds = ytmPlaylists.map { it.id }.toSet()
+            val nonDuplicatedLocals = localPlaylists.filterNot { it.id in ytmIds }
+            // Final list: deduplicated by ID to prevent crash, and by Name to prevent visual duplicates
+            (ytmPlaylists + nonDuplicatedLocals)
+                .distinctBy { it.id }
+                .distinctBy { it.name.trim().lowercase() }
         }
 
     val playlistSongOrderModesFlow: Flow<Map<String, String>> =

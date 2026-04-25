@@ -1565,9 +1565,7 @@ class MusicService : MediaLibraryService() {
                 player.repeatMode = safeRepeatMode
                 player.shuffleModeEnabled = false
                 isManualShuffleEnabled = snapshot.shuffleEnabled
-                if (snapshot.playWhenReady) {
-                    player.playWhenReady = true
-                }
+                player.playWhenReady = false
             } finally {
                 isRestoringPlaybackSnapshot = false
             }

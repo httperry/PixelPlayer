@@ -36,6 +36,15 @@ import javax.inject.Singleton
  * - Search query execution
  * - Search filter management
  * - Search history CRUD operations
+ *
+ * YTMusic search uses progressive loading:
+ * 1. Local library results are shown immediately
+ * 2. First 10 YTMusic songs are emitted as soon as the first batch arrives
+ * 3. Next 10 songs arrive in the background (second emission from searchSongsFlow)
+ *
+ * [isYtmSearching] is set to true as soon as a query is typed and reset to false
+ * when all YTMusic batches are done, enabling the UI to show skeleton rows instead
+ * of the "no results found" empty state during the loading window.
  */
 @Singleton
 class SearchStateHolder @Inject constructor(
@@ -62,14 +71,23 @@ class SearchStateHolder @Inject constructor(
     private val _searchHistory = MutableStateFlow<ImmutableList<SearchHistoryItem>>(persistentListOf())
     val searchHistory = _searchHistory.asStateFlow()
 
-    private val searchRequests = MutableSharedFlow<SearchRequest>(
+    /**
+     * True while a YTMusic search is in-flight.
+     * The UI shows skeleton/shimmer rows when this is true and results are empty,
+     * instead of flashing the "no results found" state.
+     */
+    private val _isYtmSearching = MutableStateFlow(false)
+    val isYtmSearching = _isYtmSearching.asStateFlow()
+
+    private val fullSearchRequests = MutableSharedFlow<SearchRequest>(
         extraBufferCapacity = 1,
         onBufferOverflow = BufferOverflow.DROP_OLDEST
     )
     private val latestSearchRequestId = AtomicLong(0L)
 
     private var scope: CoroutineScope? = null
-    private var searchJob: Job? = null
+    private var fullSearchJob: Job? = null
+    private var forcedSearchJob: Job? = null
 
     /**
      * Initialize with ViewModel scope.
@@ -81,84 +99,122 @@ class SearchStateHolder @Inject constructor(
 
     @OptIn(kotlinx.coroutines.FlowPreview::class)
     private fun observeSearchRequests() {
-        searchJob?.cancel()
-        searchJob = scope?.launch {
-            searchRequests
-                .debounce(SEARCH_DEBOUNCE_MS)
+        fullSearchJob?.cancel()
+        fullSearchJob = scope?.launch {
+            fullSearchRequests
+                .debounce(300L) // Fast debounce for instant rich search
                 .collectLatest { request ->
-                    val normalizedQuery = request.query
+                    executeFullSearchInternal(request)
+                }
+        }
+    }
 
-                    if (normalizedQuery.isBlank()) {
-                        if (_searchResults.value.isNotEmpty()) {
-                            _searchResults.value = persistentListOf()
-                        }
-                        return@collectLatest
-                    }
+    private suspend fun executeFullSearchInternal(request: SearchRequest) {
+        val normalizedQuery = request.query
 
-                    try {
+        if (normalizedQuery.isBlank()) {
+            _isYtmSearching.value = false
+            if (_searchResults.value.isNotEmpty()) {
+                _searchResults.value = persistentListOf()
+            }
+            return
+        }
+
+        try {
+
                         val currentFilter = _selectedSearchFilter.value
-                        
-                        // Step 1: Show local results immediately (fast)
+
+                        // ── Step 1: Signal that YTMusic search is in progress ────────────
+                        // This lets the UI show skeleton rows immediately instead of the
+                        // "no results found" empty state.
+                        _isYtmSearching.value = true
+
+                        // ── Step 2: Show local results immediately (fast path) ────────────
                         val baseResults = withContext(Dispatchers.IO) {
                             musicRepository.searchAll(normalizedQuery, currentFilter).first()
                         }
-                        
+
                         // Check if this request is still valid
                         if (request.requestId != latestSearchRequestId.get()) {
-                            return@collectLatest
+                            _isYtmSearching.value = false
+                            return
                         }
-                        
-                        // Emit local results immediately so UI shows them right away
+
+                        // Emit local results right away so UI is responsive
                         _searchResults.value = baseResults.toImmutableList()
-                        
-                        // Step 2: Add YTM results if available (slower, but non-blocking)
+
+                        // ── Step 3: Fetch YTMusic results progressively ───────────────────
                         val cookies = withContext(Dispatchers.IO) {
                             ytSessionRepository.getCookies()
                         }
-                        
-                        if (!cookies.isNullOrBlank()) {
-                            withContext(Dispatchers.IO) {
-                                // Concurrent YTM requests
-                                val ytSongsDeferred = async { 
-                                    if (currentFilter == SearchFilterType.ALL || currentFilter == SearchFilterType.SONGS) 
-                                        ytMusicRepository.searchSongs(normalizedQuery) 
-                                    else null 
-                                }
-                                val ytArtistsDeferred = async { 
-                                    if (currentFilter == SearchFilterType.ALL || currentFilter == SearchFilterType.ARTISTS) 
-                                        ytMusicRepository.searchArtists(normalizedQuery) 
-                                    else null 
-                                }
 
-                                val ytSongs = ytSongsDeferred.await()?.songs?.map { SearchResultItem.SongItem(it) } ?: emptyList()
-                                val ytArtists = ytArtistsDeferred.await()?.map { SearchResultItem.ArtistItem(it) } ?: emptyList()
-                                
-                                // Debug logging
-                                Log.d("SearchStateHolder", "YTMusic search results for '$normalizedQuery':")
-                                Log.d("SearchStateHolder", "  - Songs: ${ytSongs.size}")
-                                Log.d("SearchStateHolder", "  - Artists: ${ytArtists.size}")
-                                ytArtists.take(3).forEach { artistItem ->
-                                    val artist = (artistItem as SearchResultItem.ArtistItem).artist
-                                    Log.d("SearchStateHolder", "    • ${artist.name} (ID: ${artist.id})")
-                                }
-                                
-                                // Check again if this request is still valid before updating
+                        if (!cookies.isNullOrBlank()) {
+                            // Launch artist search in parallel — it doesn't benefit from
+                            // progressive loading the same way songs do.
+                            val ytArtistsDeferred = scope?.async(Dispatchers.IO) {
+                                if (currentFilter == SearchFilterType.ALL || currentFilter == SearchFilterType.ARTISTS)
+                                    ytMusicRepository.searchArtists(normalizedQuery)
+                                else emptyList()
+                            }
+
+                            if (currentFilter == SearchFilterType.ALL || currentFilter == SearchFilterType.SONGS) {
+                                // Collect each emission from the progressive flow:
+                                // 1st emission: first 10 songs
+                                // 2nd emission: all 20 songs
+                                ytMusicRepository.searchSongsFlow(normalizedQuery)
+                                    .collect { ytSearchResult ->
+                                        // Guard against superseded queries
+                                        if (request.requestId != latestSearchRequestId.get()) {
+                                            return@collect
+                                        }
+
+                                        val ytSongs = ytSearchResult.songs.map { SearchResultItem.SongItem(it) }
+
+                                        // Merge local + YTM songs + artists (artists arrive when available)
+                                        val ytArtists = if (!ytSearchResult.hasMore) {
+                                            // All song batches done — now we can include artist results
+                                            ytArtistsDeferred?.await()
+                                                ?.map { SearchResultItem.ArtistItem(it) }
+                                                ?: emptyList()
+                                        } else {
+                                            emptyList() // Still loading songs, skip artists for now
+                                        }
+
+                                        Log.d("SearchStateHolder", "YTMusic batch for '$normalizedQuery': songs=${ytSongs.size} hasMore=${ytSearchResult.hasMore}")
+
+                                        val merged = baseResults.toMutableList()
+                                        merged.addAll(0, ytArtists)
+                                        merged.addAll(0, ytSongs)
+
+                                        _searchResults.value = merged.toImmutableList()
+
+                                        // Stop showing skeleton once we have the first batch
+                                        if (ytSongs.isNotEmpty() || !ytSearchResult.hasMore) {
+                                            _isYtmSearching.value = false
+                                        }
+                                    }
+                            } else {
+                                // Non-songs filter: just fetch artists
+                                val ytArtists = ytArtistsDeferred?.await()
+                                    ?.map { SearchResultItem.ArtistItem(it) }
+                                    ?: emptyList()
+
                                 if (request.requestId == latestSearchRequestId.get()) {
                                     val merged = baseResults.toMutableList()
-                                    // Add YTM results at the beginning
                                     merged.addAll(0, ytArtists)
-                                    merged.addAll(0, ytSongs)
-                                    
-                                    Log.d("SearchStateHolder", "  - Total merged results: ${merged.size}")
-                                    
-                                    // Update with combined results
                                     _searchResults.value = merged.toImmutableList()
                                 }
                             }
                         }
+
+                        // Always clear loading when done
+                        _isYtmSearching.value = false
+
                     } catch (_: CancellationException) {
                         // Superseded by a newer query; ignore.
+                        _isYtmSearching.value = false
                     } catch (e: Exception) {
+                        _isYtmSearching.value = false
                         if (request.requestId == latestSearchRequestId.get()) {
                             Log.e("SearchStateHolder", "Error performing search for query: $normalizedQuery", e)
                             // Keep existing results instead of clearing them
@@ -167,8 +223,6 @@ class SearchStateHolder @Inject constructor(
                             }
                         }
                     }
-                }
-        }
     }
 
     fun updateSearchFilter(filterType: SearchFilterType) {
@@ -203,18 +257,32 @@ class SearchStateHolder @Inject constructor(
         }
     }
 
-    fun performSearch(query: String) {
+    fun onSearchQueryChanged(query: String) {
         val normalizedQuery = query.trim()
-
         val requestId = latestSearchRequestId.incrementAndGet()
 
         if (normalizedQuery.isBlank()) {
+            _isYtmSearching.value = false
             if (_searchResults.value.isNotEmpty()) {
                 _searchResults.value = persistentListOf()
             }
         }
 
-        searchRequests.tryEmit(SearchRequest(normalizedQuery, requestId))
+        val request = SearchRequest(normalizedQuery, requestId)
+        fullSearchRequests.tryEmit(request)
+    }
+
+    fun forceFullSearch(query: String) {
+        val normalizedQuery = query.trim()
+        val requestId = latestSearchRequestId.incrementAndGet()
+        
+        // Immediately cancel pending debounced searches
+        fullSearchJob?.cancel()
+        forcedSearchJob?.cancel()
+
+        forcedSearchJob = scope?.launch {
+            executeFullSearchInternal(SearchRequest(normalizedQuery, requestId))
+        }
     }
 
     fun deleteSearchHistoryItem(query: String) {
@@ -244,7 +312,8 @@ class SearchStateHolder @Inject constructor(
     }
 
     fun onCleared() {
-        searchJob?.cancel()
+        fullSearchJob?.cancel()
+        forcedSearchJob?.cancel()
         scope = null
     }
 }

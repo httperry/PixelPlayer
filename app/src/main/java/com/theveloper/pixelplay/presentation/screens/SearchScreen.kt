@@ -13,6 +13,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -125,7 +126,8 @@ import com.theveloper.pixelplay.presentation.components.subcomps.EnhancedSongLis
 
 private data class SearchUiSlice(
     val selectedSearchFilter: SearchFilterType = SearchFilterType.ALL,
-    val searchResults: ImmutableList<SearchResultItem> = persistentListOf()
+    val searchResults: ImmutableList<SearchResultItem> = persistentListOf(),
+    val isYtmSearching: Boolean = false
 )
 
 @androidx.annotation.OptIn(UnstableApi::class)
@@ -148,7 +150,8 @@ fun SearchScreen(
             .map { uiState ->
                 SearchUiSlice(
                     selectedSearchFilter = uiState.selectedSearchFilter,
-                    searchResults = uiState.searchResults
+                    searchResults = uiState.searchResults,
+                    isYtmSearching = uiState.isYtmSearching
                 )
             }
             .distinctUntilChanged()
@@ -174,10 +177,10 @@ fun SearchScreen(
         }
     }
 
-    // Search debouncing is centralized in SearchStateHolder.
     LaunchedEffect(searchQuery, currentFilter) {
-        playerViewModel.performSearch(searchQuery)
+        playerViewModel.onSearchQueryChanged(searchQuery)
     }
+
     val searchResults = searchUiState.searchResults
     val handleSongMoreOptionsClick: (Song) -> Unit = { song ->
         playerViewModel.selectSongForInfo(song)
@@ -370,16 +373,21 @@ fun SearchScreen(
                             SearchFilterChip(SearchFilterType.ARTISTS, currentFilter, playerViewModel)
                             SearchFilterChip(SearchFilterType.PLAYLISTS, currentFilter, playerViewModel)
                         }
+
                         Crossfade(
                             targetState = searchResults.isEmpty(),
                             animationSpec = tween(durationMillis = 190),
                             label = "search_results_fade"
                         ) { isEmpty ->
                             if (isEmpty) {
-                                EmptySearchResults(
-                                    searchQuery = searchQuery,
-                                    colorScheme = colorScheme
-                                )
+                                if (searchUiState.isYtmSearching) {
+                                    SearchResultsSkeleton()
+                                } else {
+                                    EmptySearchResults(
+                                        searchQuery = searchQuery,
+                                        colorScheme = colorScheme
+                                    )
+                                }
                             } else {
                                 SearchResultsList(
                                     results = searchResults,
@@ -683,12 +691,19 @@ fun SearchResultsList(
     }
     val onSongResultClick = remember(playerViewModel, onItemSelected, songResultsQueue, searchQueueName) {
         { song: Song ->
-            val playbackQueue = if (songResultsQueue.any { it.id == song.id }) {
-                songResultsQueue
+            val isYtmSong = song.ytmusicId != null || song.contentUriString.startsWith("ytm://")
+            if (isYtmSong) {
+                // YTM songs: start immediately then queue radio recommendations in background
+                playerViewModel.playYtmSongWithRadio(song)
             } else {
-                listOf(song)
+                // Local songs: queue all adjacent search results for context
+                val playbackQueue = if (songResultsQueue.any { it.id == song.id }) {
+                    songResultsQueue
+                } else {
+                    listOf(song)
+                }
+                playerViewModel.showAndPlaySong(song, playbackQueue, searchQueueName)
             }
-            playerViewModel.showAndPlaySong(song, playbackQueue, searchQueueName)
             onItemSelected()
         }
     }
@@ -862,6 +877,74 @@ fun SearchResultsList(
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
+// ---- Search Skeleton UI Components ----
+
+@Composable
+fun SearchResultsSkeleton() {
+    val localDensity = LocalDensity.current
+    val imePadding = WindowInsets.ime.getBottom(localDensity).dp
+    val systemBarPaddingBottom = WindowInsets.systemBars.asPaddingValues().calculateBottomPadding() + 94.dp
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)),
+        contentPadding = PaddingValues(
+            top = 8.dp,
+            bottom = if (imePadding <= 8.dp) (MiniPlayerHeight + systemBarPaddingBottom) else imePadding
+        )
+    ) {
+        item {
+            SearchResultSectionHeader("Searching...")
+        }
+        items(10) {
+            SongListItemSkeleton()
+        }
+    }
+}
+
+@Composable
+fun SongListItemSkeleton() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 12.dp, horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Thumbnail skeleton
+        Box(
+            modifier = Modifier
+                .size(56.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+        )
+        
+        Spacer(modifier = Modifier.width(16.dp))
+        
+        Column(modifier = Modifier.weight(1f)) {
+            // Title skeleton
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(0.7f)
+                    .height(16.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+            )
+            
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            // Subtitle skeleton
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(0.4f)
+                    .height(12.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
+            )
+        }
+    }
+}
+
 @Composable
 fun SearchResultAlbumItem(
     album: Album,

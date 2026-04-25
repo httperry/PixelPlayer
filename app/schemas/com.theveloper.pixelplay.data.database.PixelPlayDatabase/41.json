@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 41,
-    "identityHash": "4a32bd6d0efacbcec905d524e42658e6",
+    "identityHash": "37acf9492bf5489a519c09a86e62364f",
     "entities": [
       {
         "tableName": "album_art_themes",
@@ -2728,7 +2728,7 @@
       },
       {
         "tableName": "ytmusic_songs",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`video_id` TEXT NOT NULL, `title` TEXT NOT NULL, `artist` TEXT NOT NULL, `album` TEXT, `duration_seconds` INTEGER NOT NULL, `thumbnail_url` TEXT NOT NULL, `is_explicit` INTEGER NOT NULL, `year` INTEGER, `cached_at` INTEGER NOT NULL, `last_accessed` INTEGER NOT NULL, PRIMARY KEY(`video_id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`video_id` TEXT NOT NULL, `title` TEXT NOT NULL, `artist` TEXT NOT NULL, `album` TEXT, `duration_seconds` INTEGER NOT NULL, `thumbnail_url` TEXT NOT NULL, `is_explicit` INTEGER NOT NULL DEFAULT 0, `year` INTEGER, `cached_at` INTEGER NOT NULL, `last_accessed` INTEGER NOT NULL, PRIMARY KEY(`video_id`))",
         "fields": [
           {
             "fieldPath": "videoId",
@@ -2769,7 +2769,8 @@
             "fieldPath": "isExplicit",
             "columnName": "is_explicit",
             "affinity": "INTEGER",
-            "notNull": true
+            "notNull": true,
+            "defaultValue": "0"
           },
           {
             "fieldPath": "year",
@@ -2794,11 +2795,22 @@
           "columnNames": [
             "video_id"
           ]
-        }
+        },
+        "indices": [
+          {
+            "name": "index_ytmusic_songs_last_accessed",
+            "unique": false,
+            "columnNames": [
+              "last_accessed"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ytmusic_songs_last_accessed` ON `${TABLE_NAME}` (`last_accessed`)"
+          }
+        ]
       },
       {
         "tableName": "ytmusic_playlists",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`playlist_id` TEXT NOT NULL, `title` TEXT NOT NULL, `description` TEXT, `thumbnail_url` TEXT, `track_count` INTEGER NOT NULL, `author` TEXT, `is_editable` INTEGER NOT NULL, `cached_at` INTEGER NOT NULL, `last_synced` INTEGER NOT NULL, PRIMARY KEY(`playlist_id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`playlist_id` TEXT NOT NULL, `title` TEXT NOT NULL, `description` TEXT, `thumbnail_url` TEXT, `track_count` INTEGER NOT NULL DEFAULT 0, `author` TEXT, `is_editable` INTEGER NOT NULL DEFAULT 0, `cached_at` INTEGER NOT NULL, `last_synced` INTEGER NOT NULL, PRIMARY KEY(`playlist_id`))",
         "fields": [
           {
             "fieldPath": "playlistId",
@@ -2826,7 +2838,8 @@
             "fieldPath": "trackCount",
             "columnName": "track_count",
             "affinity": "INTEGER",
-            "notNull": true
+            "notNull": true,
+            "defaultValue": "0"
           },
           {
             "fieldPath": "author",
@@ -2837,7 +2850,8 @@
             "fieldPath": "isEditable",
             "columnName": "is_editable",
             "affinity": "INTEGER",
-            "notNull": true
+            "notNull": true,
+            "defaultValue": "0"
           },
           {
             "fieldPath": "cachedAt",
@@ -2857,7 +2871,18 @@
           "columnNames": [
             "playlist_id"
           ]
-        }
+        },
+        "indices": [
+          {
+            "name": "index_ytmusic_playlists_last_synced",
+            "unique": false,
+            "columnNames": [
+              "last_synced"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ytmusic_playlists_last_synced` ON `${TABLE_NAME}` (`last_synced`)"
+          }
+        ]
       },
       {
         "tableName": "ytmusic_playlist_songs",
@@ -2895,12 +2920,32 @@
             "video_id",
             "position"
           ]
-        }
+        },
+        "indices": [
+          {
+            "name": "index_ytmusic_playlist_songs_playlist_id",
+            "unique": false,
+            "columnNames": [
+              "playlist_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ytmusic_playlist_songs_playlist_id` ON `${TABLE_NAME}` (`playlist_id`)"
+          },
+          {
+            "name": "index_ytmusic_playlist_songs_video_id",
+            "unique": false,
+            "columnNames": [
+              "video_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ytmusic_playlist_songs_video_id` ON `${TABLE_NAME}` (`video_id`)"
+          }
+        ]
       }
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '4a32bd6d0efacbcec905d524e42658e6')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '37acf9492bf5489a519c09a86e62364f')"
     ]
   }
 }

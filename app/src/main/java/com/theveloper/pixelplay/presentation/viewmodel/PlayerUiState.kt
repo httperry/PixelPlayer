@@ -60,5 +60,7 @@ data class PlayerUiState(
     val hideLocalMedia: Boolean = false,
     val showQueueItemUndoBar: Boolean = false,
     val lastRemovedQueueSong: Song? = null,
-    val lastRemovedQueueIndex: Int = -1
+    val lastRemovedQueueIndex: Int = -1,
+    /** True while a YTMusic search is in flight (shows skeleton rows in SearchScreen) */
+    val isYtmSearching: Boolean = false,
 )

@@ -77,7 +77,8 @@ constructor(
         private val neteaseDao: NeteaseDao,
         private val navidromeRepository: NavidromeRepository,
         private val localPlaylistDao: com.theveloper.pixelplay.data.database.LocalPlaylistDao,
-        private val ytMusicRepository: com.theveloper.pixelplay.data.network.ytmusic.YTMusicRepository
+        private val ytMusicRepository: com.theveloper.pixelplay.data.network.ytmusic.YTMusicRepository,
+        private val ytmSessionRepository: com.theveloper.pixelplay.data.network.ytmusic.YTMSessionRepository
 ) : CoroutineWorker(appContext, workerParams) {
 
     private val contentResolver: ContentResolver = appContext.contentResolver
@@ -1739,6 +1740,12 @@ constructor(
     }
 
     private suspend fun syncYTMusicData() {
+        // Check if user is authenticated before syncing
+        if (!ytmSessionRepository.isLoggedIn()) {
+            Log.d(TAG, "Skipping YT Music sync — not logged in.")
+            return
+        }
+        
         Log.i(TAG, "Syncing YT Music Library Playlists...")
         try {
             val ytmPlaylists = ytMusicRepository.getUserPlaylists()

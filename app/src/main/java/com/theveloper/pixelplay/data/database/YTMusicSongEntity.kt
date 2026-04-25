@@ -8,7 +8,12 @@ import androidx.room.PrimaryKey
  * Local cache for YouTube Music songs.
  * Reduces dependency on WebSocket server for frequently accessed data.
  */
-@Entity(tableName = "ytmusic_songs")
+@Entity(
+    tableName = "ytmusic_songs",
+    indices = [
+        androidx.room.Index(value = ["last_accessed"], name = "index_ytmusic_songs_last_accessed")
+    ]
+)
 data class YTMusicSongEntity(
     @PrimaryKey
     @ColumnInfo(name = "video_id")
@@ -29,7 +34,7 @@ data class YTMusicSongEntity(
     @ColumnInfo(name = "thumbnail_url")
     val thumbnailUrl: String,
     
-    @ColumnInfo(name = "is_explicit")
+    @ColumnInfo(name = "is_explicit", defaultValue = "0")
     val isExplicit: Boolean = false,
     
     @ColumnInfo(name = "year")

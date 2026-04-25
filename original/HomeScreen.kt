@@ -80,8 +80,6 @@ import com.theveloper.pixelplay.presentation.netease.dashboard.NeteaseDashboardV
 import com.theveloper.pixelplay.presentation.jellyfin.dashboard.JellyfinDashboardViewModel
 import com.theveloper.pixelplay.presentation.navidrome.dashboard.NavidromeDashboardViewModel
 import com.theveloper.pixelplay.presentation.qqmusic.dashboard.QqMusicDashboardViewModel
-import com.theveloper.pixelplay.presentation.ytmusic.dashboard.YTMusicDashboardViewModel
-import com.theveloper.pixelplay.data.network.ytmusic.YTMAlbumShelf
 import com.theveloper.pixelplay.presentation.components.DailyMixSection
 import com.theveloper.pixelplay.presentation.components.HomeGradientTopBar
 import com.theveloper.pixelplay.presentation.components.HomeOptionsBottomSheet
@@ -93,7 +91,6 @@ import com.theveloper.pixelplay.presentation.components.SmartImage
 import com.theveloper.pixelplay.presentation.components.StatsOverviewCard
 import com.theveloper.pixelplay.presentation.model.collectRecentlyPlayedSongIds
 import com.theveloper.pixelplay.presentation.model.mapRecentlyPlayedSongs
-import com.theveloper.pixelplay.presentation.model.RecentlyPlayedSongUiModel
 import com.theveloper.pixelplay.presentation.components.subcomps.PlayingEqIcon
 import com.theveloper.pixelplay.presentation.navigation.Screen
 import com.theveloper.pixelplay.presentation.components.StreamingProviderSheet
@@ -122,7 +119,6 @@ fun HomeScreen(
     qqMusicViewModel: QqMusicDashboardViewModel = hiltViewModel(),
     navidromeViewModel: NavidromeDashboardViewModel = hiltViewModel(),
     jellyfinViewModel: JellyfinDashboardViewModel = hiltViewModel(),
-    ytMusicViewModel: YTMusicDashboardViewModel = hiltViewModel(),
     onOpenSidebar: () -> Unit
 ) {
     val context = LocalContext.current
@@ -201,61 +197,6 @@ fun HomeScreen(
     }
 
     val yourMixSong: String = "Today's Mix for you"
-    
-    // YouTube Music data integration
-    val ytMusicHomeFeed by ytMusicViewModel.homeFeed.collectAsStateWithLifecycle()
-    val ytMusicMixedForYou = remember(ytMusicHomeFeed) {
-        // Find "Mixed for you" playlist from YT Music home feed
-        ytMusicHomeFeed.firstOrNull { section -> 
-            section.title.contains("Mixed", ignoreCase = true) 
-        }
-    }
-    val ytMusicListenAgain = remember(ytMusicHomeFeed) {
-        // Find "Listen again" section from YT Music home feed
-        ytMusicHomeFeed.firstOrNull { section -> 
-            section.title.contains("Listen again", ignoreCase = true) 
-        }
-    }
-    
-    val ytMusicRecentlyPlayed by ytMusicViewModel.recentlyPlayed.collectAsStateWithLifecycle()
-    
-    // Combine local and YT Music songs for Your Mix
-    val combinedYourMixSongs = remember(yourMixSongs, ytMusicMixedForYou) {
-        val combined = yourMixSongs.toMutableList()
-        ytMusicMixedForYou?.songs?.let { ytSongs ->
-            combined.addAll(ytSongs)
-        }
-        combined.toImmutableList()
-    }
-    
-    // Combine local and YT Music recently played
-    val combinedRecentlyPlayed = remember(recentlyPlayedSongs, ytMusicRecentlyPlayed, ytMusicListenAgain) {
-        val combined = recentlyPlayedSongs.toMutableList()
-        val existingIds = combined.map { it.song.id }.toSet()
-        
-        // Add actual history from YT Music
-        val ytMapped = ytMusicRecentlyPlayed.map { song ->
-            RecentlyPlayedSongUiModel(
-                song = song,
-                lastPlayedTimestamp = System.currentTimeMillis()
-            )
-        }
-        combined.addAll(ytMapped.filter { !existingIds.contains(it.song.id) })
-        
-        // Fallback to "Listen again" if history is empty
-        if (ytMusicRecentlyPlayed.isEmpty()) {
-            ytMusicListenAgain?.songs?.let { ytSongs ->
-                combined.addAll(ytSongs.filter { !existingIds.contains(it.id) }.map { song ->
-                    RecentlyPlayedSongUiModel(
-                        song = song,
-                        lastPlayedTimestamp = System.currentTimeMillis()
-                    )
-                })
-            }
-        }
-        
-        combined
-    }
 
     // 2) Observar sólo el currentSong (o null) para saber si mostrar padding
     val currentSong by remember(playerViewModel.stablePlayerState) {
@@ -336,12 +277,12 @@ fun HomeScreen(
                         song = yourMixSong,
                         isShuffleEnabled = isShuffleEnabled,
                         onPlayShuffled = {
-                            if (combinedYourMixSongs.isNotEmpty()) {
+                            if (yourMixSongs.isNotEmpty()) {
                                 if (usesFallbackHomeMix) {
                                     playerViewModel.shuffleAllSongs(queueName = "Your Mix")
                                 } else {
                                     playerViewModel.playSongsShuffled(
-                                        songsToPlay = combinedYourMixSongs,
+                                        songsToPlay = yourMixSongs,
                                         queueName = "Your Mix",
                                         startAtZero = true,
                                     )
@@ -352,7 +293,7 @@ fun HomeScreen(
                 }
 
                 // Collage
-                if (combinedYourMixSongs.isNotEmpty()) {
+                if (yourMixSongs.isNotEmpty()) {
                     item(
                         key = "album_art_collage",
                         contentType = "album_art_collage"
@@ -373,7 +314,7 @@ fun HomeScreen(
 
                         AlbumArtCollage(
                             modifier = Modifier.fillMaxWidth(),
-                            songs = combinedYourMixSongs,
+                            songs = yourMixSongs,
                             padding = 14.dp,
                             height = 400.dp,
                             pattern = activePattern,
@@ -381,7 +322,7 @@ fun HomeScreen(
                                 if (usesFallbackHomeMix) {
                                     playerViewModel.showAndPlaySongFromLibrary(song, queueName = "Your Mix")
                                 } else {
-                                    playerViewModel.showAndPlaySong(song, combinedYourMixSongs, "Your Mix")
+                                    playerViewModel.showAndPlaySong(song, yourMixSongs, "Your Mix")
                                 }
                             }
                         )
@@ -415,21 +356,17 @@ fun HomeScreen(
                     }
                 }
 
-                if (combinedRecentlyPlayed.size >= RecentlyPlayedSectionMinSongsToShow) {
+                if (recentlyPlayedSongs.size >= RecentlyPlayedSectionMinSongsToShow) {
                     item(
                         key = "recently_played_section",
                         contentType = "recently_played_section"
                     ) {
-                        val combinedQueue = remember(combinedRecentlyPlayed) {
-                            combinedRecentlyPlayed.map { it.song }.toImmutableList()
-                        }
-                        
                         RecentlyPlayedSection(
-                            songs = combinedRecentlyPlayed,
+                            songs = recentlyPlayedSongs,
                             onSongClick = { song ->
-                                if (combinedQueue.isNotEmpty()) {
+                                if (recentlyPlayedQueue.isNotEmpty()) {
                                     playerViewModel.playSongs(
-                                        songsToPlay = combinedQueue,
+                                        songsToPlay = recentlyPlayedQueue,
                                         startSong = song,
                                         queueName = "Recently Played"
                                     )

@@ -1624,13 +1624,7 @@ fun LibraryScreen(
                             }
                         }
                     }
-                } else if (
-                    playerUiState.isSyncingLibrary ||
-                    (
-                            (playerUiState.isLoadingInitialSongs || playerUiState.isLoadingLibraryCategories) &&
-                                    isLibraryContentEmpty
-                            )
-                ) {
+                } else if (playerUiState.isSyncingLibrary && isLibraryContentEmpty) {
                     // P1-1: LibrarySyncOverlay reads syncProgress internally so that sync progress
                     // ticks don't trigger recomposition of the entire LibraryScreen.
                     LibrarySyncOverlay(syncManager = syncManager)

@@ -31,7 +31,9 @@ private const val WS_URL = "ws://127.0.0.1:8765"
  * - StateFlow for reactive UI updates
  */
 @Singleton
-class YTMusicWebSocketClient @Inject constructor() {
+class YTMusicWebSocketClient @Inject constructor(
+    private val sessionRepository: YTMSessionRepository
+) {
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
@@ -85,8 +87,10 @@ class YTMusicWebSocketClient @Inject constructor() {
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 Log.d(TAG, "✅ WebSocket connected")
-                _isConnected.value = true
                 reconnectJob?.cancel()
+                
+                // Set connected immediately so requests can be sent
+                _isConnected.value = true
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
@@ -184,8 +188,15 @@ class YTMusicWebSocketClient @Inject constructor() {
         // Keep service alive
         YTMusicPythonService.keepAlive()
         
-        if (!_isConnected.value) {
-            return Result.failure(Exception("Not connected"))
+        if (!_isConnected.value && action != "auth_setup") {
+            Log.d(TAG, "Waiting for WebSocket connection...")
+            try {
+                kotlinx.coroutines.withTimeout(15000) {
+                    isConnected.first { it }
+                }
+            } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+                return Result.failure(Exception("Not connected (timeout waiting for Python server)"))
+            }
         }
 
         val requestId = UUID.randomUUID().toString()
@@ -227,15 +238,15 @@ class YTMusicWebSocketClient @Inject constructor() {
     // API METHODS (All async, never block UI)
     // ========================================================================
 
-    suspend fun setupAuth(cookies: String): Result<Boolean> {
-        return sendRequest("auth_setup", mapOf("cookies" to cookies))
+    suspend fun setupAuth(cookies: String, sapisidHash: String): Result<Boolean> {
+        return sendRequest("auth_setup", mapOf("cookies" to cookies, "sapisid_hash" to sapisidHash))
             .map { it["authenticated"] as? Boolean ?: false }
     }
 
     suspend fun search(
         query: String,
         filter: String = "songs",
-        limit: Int = 20
+        limit: Int = 10
     ): Result<List<Map<String, Any>>> {
         return sendRequest("search", mapOf(
             "query" to query,
@@ -247,10 +258,57 @@ class YTMusicWebSocketClient @Inject constructor() {
         }
     }
 
-    suspend fun getLibrarySongs(): Result<List<Map<String, Any>>> {
-        return sendRequest("library_songs").map { response ->
+    suspend fun getSearchSuggestions(query: String): Result<List<String>> {
+        return sendRequest("search_suggestions", mapOf("query" to query)).map { response ->
             @Suppress("UNCHECKED_CAST")
-            response["songs"] as? List<Map<String, Any>> ?: emptyList()
+            response["suggestions"] as? List<String> ?: emptyList()
+        }
+    }
+
+    /**
+     * Search with offset/limit for progressive loading.
+     *
+     * Call with offset=0 for the first page (fast), then offset=10 for the
+     * second page in the background.
+     */
+    suspend fun searchPaginated(
+        query: String,
+        filter: String = "songs",
+        limit: Int = 10,
+        offset: Int = 0
+    ): Result<List<Map<String, Any>>> {
+        return sendRequest("search", mapOf(
+            "query" to query,
+            "filter" to filter,
+            "limit" to limit,
+            "offset" to offset
+        )).map { response ->
+            @Suppress("UNCHECKED_CAST")
+            response["results"] as? List<Map<String, Any>> ?: emptyList()
+        }
+    }
+
+    /** Get paginated library songs. offset=0, limit=50 returns the first 50 songs fast. */
+    data class LibrarySongsPage(
+        val songs: List<Map<String, Any>>,
+        val offset: Int,
+        val limit: Int,
+        val total: Int,
+        val hasMore: Boolean,
+        val cached: Boolean
+    )
+
+    suspend fun getLibrarySongs(offset: Int = 0, limit: Int = 50): Result<LibrarySongsPage> {
+        return sendRequest("library_songs", mapOf("offset" to offset, "limit" to limit)).map { response ->
+            @Suppress("UNCHECKED_CAST")
+            LibrarySongsPage(
+                songs = response["songs"] as? List<Map<String, Any>> ?: emptyList(),
+                offset = (response["offset"] as? Number)?.toInt() ?: offset,
+                limit = (response["limit"] as? Number)?.toInt() ?: limit,
+                total = (response["total"] as? Number)?.toInt() ?: 0,
+                hasMore = response["has_more"] as? Boolean ?: false,
+                cached = response["cached"] as? Boolean ?: false
+            )
         }
     }
 
@@ -261,13 +319,37 @@ class YTMusicWebSocketClient @Inject constructor() {
         }
     }
 
-    suspend fun getPlaylist(playlistId: String, limit: Int = 100): Result<Map<String, Any>> {
+    suspend fun getPlaylist(playlistId: String, limit: Int = 200): Result<Map<String, Any>> {
         return sendRequest("get_playlist", mapOf(
             "playlist_id" to playlistId,
             "limit" to limit
         )).map { response ->
+            // Python now returns both 'playlist' (full object) and 'tracks' (flat list)
+            // Merge them so callers can access 'tracks' directly from the result map
             @Suppress("UNCHECKED_CAST")
-            response["playlist"] as? Map<String, Any> ?: emptyMap()
+            val playlist = response["playlist"] as? Map<String, Any> ?: emptyMap()
+            val tracks = response["tracks"]
+                ?: playlist["tracks"]  // fallback: tracks nested inside playlist object
+            if (tracks != null) {
+                playlist + mapOf("tracks" to tracks)
+            } else {
+                playlist
+            }
+        }
+    }
+
+    suspend fun getWatchPlaylist(
+        videoId: String,
+        playlistId: String = "",
+        limit: Int = 25
+    ): Result<List<Map<String, Any>>> {
+        return sendRequest("watch_playlist", mapOf(
+            "video_id" to videoId,
+            "playlist_id" to playlistId,
+            "limit" to limit
+        )).map { response ->
+            @Suppress("UNCHECKED_CAST")
+            response["tracks"] as? List<Map<String, Any>> ?: emptyList()
         }
     }
 
@@ -316,11 +398,35 @@ class YTMusicWebSocketClient @Inject constructor() {
         }
     }
 
+    suspend fun getHistory(): Result<List<Map<String, Any>>> {
+        return sendRequest("get_history").map { response ->
+            @Suppress("UNCHECKED_CAST")
+            response["history"] as? List<Map<String, Any>> ?: emptyList()
+        }
+    }
+
     suspend fun getArtist(browseId: String): Result<Map<String, Any>> {
         return sendRequest("get_artist", mapOf("browse_id" to browseId))
             .map { response ->
                 @Suppress("UNCHECKED_CAST")
                 response["artist"] as? Map<String, Any> ?: emptyMap()
+            }
+    }
+
+    /**
+     * Get audio stream URL for a YouTube video ID.
+     *
+     * Delegates to Python yt-dlp backend for reliable stream extraction.
+     * yt-dlp handles YouTube's cipher obfuscation and is actively maintained.
+     *
+     * @param videoId 11-character YouTube video ID
+     * @return Result containing the direct audio stream URL string
+     */
+    suspend fun getStreamUrl(videoId: String): Result<String> {
+        return sendRequest("get_stream_url", mapOf("video_id" to videoId))
+            .map { response ->
+                response["stream_url"] as? String
+                    ?: throw Exception("No stream_url in response")
             }
     }
 }

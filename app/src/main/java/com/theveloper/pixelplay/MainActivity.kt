@@ -511,7 +511,7 @@ class MainActivity : ComponentActivity() {
         var loadingShownTimestamp by remember { mutableStateOf(0L) }
         val minimumDisplayDuration = 1500L // Show loading for at least 1.5 seconds
 
-        val shouldPotentiallyShowLoading = isSyncing && isLibraryEmpty && !hasCompletedInitialSync
+        val shouldPotentiallyShowLoading = false // Disabled for silent background syncing
 
         LaunchedEffect(shouldPotentiallyShowLoading) {
             if (shouldPotentiallyShowLoading) {

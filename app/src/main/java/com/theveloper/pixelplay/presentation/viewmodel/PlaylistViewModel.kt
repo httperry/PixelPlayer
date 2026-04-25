@@ -7,6 +7,7 @@ import android.widget.Toast
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.theveloper.pixelplay.data.DailyMixManager
+import com.theveloper.pixelplay.data.network.ytmusic.YTMusicRepository
 import com.theveloper.pixelplay.data.model.Playlist
 import com.theveloper.pixelplay.data.model.SmartPlaylistRule
 import com.theveloper.pixelplay.data.model.Song
@@ -74,6 +75,7 @@ class PlaylistViewModel @Inject constructor(
     private val dailyMixManager: DailyMixManager,
     private val aiPlaylistGenerator: AiPlaylistGenerator,
     private val m3uManager: M3uManager,
+    private val ytMusicRepository: YTMusicRepository,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
 
@@ -222,25 +224,37 @@ class PlaylistViewModel @Inject constructor(
                         }
                     }
                 } else {
-                    // Obtener la playlist de las preferencias del usuario
+                    // Get playlist from preferences/Room
                     val playlist = playlistPreferencesRepository.userPlaylistsFlow.first()
                         .find { it.id == playlistId }
 
                     if (playlist != null) {
+                        // YTM playlists: fetch songs from backend, not local Room
+                        val songsList: List<Song> = if (playlist.source == "YTM") {
+                            withContext(Dispatchers.IO) {
+                                try {
+                                    ytMusicRepository.getPlaylistTracks(playlistId)
+                                } catch (e: Exception) {
+                                    Log.e("PlaylistVM", "Failed to load YTM playlist tracks: ${e.message}", e)
+                                    emptyList()
+                                }
+                            }
+                        } else {
+                            val orderMode = _uiState.value.playlistOrderModes[playlistId]
+                                ?: PlaylistSongsOrderMode.Manual
+                            withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                musicRepository.getSongsByIds(playlist.songIds).first()
+                            }
+                        }
+
                         val orderMode = _uiState.value.playlistOrderModes[playlistId]
                             ?: PlaylistSongsOrderMode.Manual
-
-                        // Colectar la lista de canciones del Flow devuelto por el repositorio en un hilo de IO
-                        val songsList: List<Song> = withContext(kotlinx.coroutines.Dispatchers.IO) {
-                            musicRepository.getSongsByIds(playlist.songIds).first()
+                        val orderedSongs = when {
+                            playlist.source == "YTM" -> songsList // keep backend order
+                            orderMode is PlaylistSongsOrderMode.Sorted -> applySortToSongs(songsList, orderMode.option)
+                            else -> songsList
                         }
 
-                        val orderedSongs = when (orderMode) {
-                            is PlaylistSongsOrderMode.Sorted -> applySortToSongs(songsList, orderMode.option)
-                            PlaylistSongsOrderMode.Manual -> songsList
-                        }
-
-                        // La actualización del UI se hace en el hilo principal
                         _uiState.update {
                             it.copy(
                                 currentPlaylistDetails = playlist,

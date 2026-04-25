@@ -40,10 +40,14 @@ private const val IDLE_TIMEOUT_MS = 5 * 60 * 1000L // 5 minutes
 @AndroidEntryPoint
 class YTMusicPythonService : Service() {
 
+    @Inject
+    lateinit var ytmSessionRepository: com.theveloper.pixelplay.data.network.ytmusic.YTMSessionRepository
+
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var pythonServerJob: Job? = null
     private var idleCheckJob: Job? = null
     private var isServerRunning = false
+    private var isBackendAuthenticated = false
     private var lastActivityTime = System.currentTimeMillis()
     
     private var wakeLock: PowerManager.WakeLock? = null
@@ -69,6 +73,8 @@ class YTMusicPythonService : Service() {
 
         fun isRunning(): Boolean = isServiceRunning
         
+        fun isBackendAuthenticated(): Boolean = instance?.isBackendAuthenticated == true
+        
         fun getEncryptionKey(): String? = encryptionKey
         
         /**
@@ -77,6 +83,14 @@ class YTMusicPythonService : Service() {
          */
         fun keepAlive() {
             instance?.updateActivity()
+        }
+        
+        /**
+         * Setup authentication with browser.json file path.
+         * Passes the file to Python backend for ytmusicapi initialization.
+         */
+        fun setupAuthentication(browserJsonPath: String) {
+            instance?.authenticatePythonBackend(browserJsonPath)
         }
     }
 
@@ -92,10 +106,22 @@ class YTMusicPythonService : Service() {
         }
         
         createNotificationChannel()
-        startForeground(NOTIFICATION_ID, createNotification("Starting..."))
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(
+                NOTIFICATION_ID, 
+                createNotification("Starting..."),
+                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+            )
+        } else {
+            startForeground(NOTIFICATION_ID, createNotification("Starting..."))
+        }
         
         startPythonServer()
         startIdleCheck()
+        
+        // Check for existing browser.json and authenticate if found
+        checkAndAuthenticateExistingSession()
+        
         isServiceRunning = true
     }
 
@@ -136,6 +162,67 @@ class YTMusicPythonService : Service() {
         val notification = createNotification("Active")
         val manager = getSystemService(NotificationManager::class.java)
         manager.notify(NOTIFICATION_ID, notification)
+    }
+    
+    private fun checkAndAuthenticateExistingSession() {
+        serviceScope.launch {
+            try {
+                // Check if we have auth headers in DataStore
+                val authHeaders = ytmSessionRepository.getAuthHeaders()
+                
+                if (authHeaders != null) {
+                    Log.d(TAG, "📄 Found auth headers in DataStore, recreating browser.json...")
+                    
+                    // Recreate browser.json from DataStore (in case it was deleted)
+                    val browserJsonFile = java.io.File(filesDir, "browser.json")
+                    val gson = com.google.gson.Gson()
+                    browserJsonFile.writeText(gson.toJson(authHeaders))
+                    
+                    Log.d(TAG, "✅ browser.json recreated at: ${browserJsonFile.absolutePath}")
+                    
+                    // Wait for Python server to be fully ready
+                    delay(3000)
+                    
+                    authenticatePythonBackend(browserJsonFile.absolutePath)
+                } else {
+                    Log.d(TAG, "No auth headers in DataStore - user needs to login")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error checking for existing session", e)
+            }
+        }
+    }
+    
+    private fun authenticatePythonBackend(browserJsonPath: String) {
+        serviceScope.launch {
+            try {
+                Log.d(TAG, "Setting up Python backend authentication with: $browserJsonPath")
+                
+                // Wait for Python server to be ready
+                var retries = 0
+                while (!isServerRunning && retries < 20) {
+                    delay(500)
+                    retries++
+                }
+                
+                if (!isServerRunning) {
+                    Log.e(TAG, "Python server not running, cannot authenticate")
+                    return@launch
+                }
+                
+                val python = Python.getInstance()
+                val module = python.getModule("ytmusic_websocket_server")
+                
+                // Call Python function to load browser.json
+                val result = module.callAttr("setup_auth", browserJsonPath)
+                
+                Log.d(TAG, "✅ Python backend authentication result: $result")
+                isBackendAuthenticated = true
+                
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to authenticate Python backend", e)
+            }
+        }
     }
 
     private fun startIdleCheck() {
@@ -211,18 +298,24 @@ class YTMusicPythonService : Service() {
                 val module = python.getModule("ytmusic_websocket_server")
                 Log.d(TAG, "Module loaded successfully")
                 
-                // Run server
+                // Set server as running BEFORE starting (run_server blocks forever)
+                isServerRunning = true
+                Log.d(TAG, "✅ Python WebSocket server marked as running")
+                
+                // Release wake lock before starting server (it will block)
+                releaseWakeLock()
+                
+                // Run server (this blocks forever - it's an async event loop)
                 withContext(Dispatchers.IO) {
                     Log.d(TAG, "Python WebSocket server starting on port 8765...")
-                    Log.d(TAG, "Calling run_server with encryption key: ${if (encryptionKey != null) "present" else "null"}")
-                    module.callAttr("run_server", encryptionKey)
+                    Log.d(TAG, "Calling run_server (no encryption for localhost)")
+                    
+                    // Call run_server without encryption key (localhost only, no encryption needed)
+                    module.callAttr("run_server")
+                    
+                    // This line is never reached - run_server runs forever
+                    Log.d(TAG, "⚠️ Python server stopped unexpectedly")
                 }
-                
-                isServerRunning = true
-                Log.d(TAG, "✅ Python WebSocket server running!")
-                
-                // Release wake lock after startup
-                releaseWakeLock()
                 
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to start Python server: ${e.message}", e)

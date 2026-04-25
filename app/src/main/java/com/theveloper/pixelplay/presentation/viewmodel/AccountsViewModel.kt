@@ -104,12 +104,21 @@ class AccountsViewModel @Inject constructor(
         connected to playlistCount
     }
 
-    // YTM: simple login-state + stream quality label
-    private val ytmStateFlow = kotlinx.coroutines.flow.flow {
-        val loggedIn = ytmSessionRepository.isLoggedIn()
-        val email = ytmSessionRepository.getLoginEmail()
-        emit(loggedIn to (email ?: ""))
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false to "")
+    // YTM: simple login-state + stream quality label  
+    private val _ytmStateFlow = MutableStateFlow(false to "")
+    private val ytmStateFlow: StateFlow<Pair<Boolean, String>> = _ytmStateFlow
+    
+    init {
+        refreshYTMusicState()
+    }
+    
+    fun refreshYTMusicState() {
+        viewModelScope.launch {
+            val loggedIn = ytmSessionRepository.isLoggedIn()
+            val email = ytmSessionRepository.getLoginEmail()
+            _ytmStateFlow.value = loggedIn to (email ?: "")
+        }
+    }
 
     val uiState: StateFlow<AccountsUiState> = combine(
         combine(

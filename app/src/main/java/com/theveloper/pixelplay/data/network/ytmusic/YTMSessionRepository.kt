@@ -19,6 +19,8 @@ private val Context.ytmDataStore by preferencesDataStore(name = "ytm_session")
 private val KEY_COOKIE_STRING = stringPreferencesKey("ytm_cookie_string")
 private val KEY_SAPISID = stringPreferencesKey("ytm_sapisid")
 private val KEY_LOGIN_EMAIL = stringPreferencesKey("ytm_login_email")
+private val KEY_AUTHORIZATION = stringPreferencesKey("ytm_authorization")
+private val KEY_AUTH_USER = stringPreferencesKey("ytm_auth_user")
 
 /**
  * Persists the YouTube Music session cookies extracted from the WebView login.
@@ -62,13 +64,64 @@ class YTMSessionRepository @Inject constructor(
     // -------------------------------------------------------------------------
 
     /**
+     * Persists the full auth headers extracted from WebView network interception.
+     * This includes the complete Cookie header (with HttpOnly cookies) and Authorization header.
+     *
+     * @param cookieString The full `Cookie` header string including HttpOnly cookies
+     * @param authorization The full `Authorization` header (SAPISIDHASH)
+     * @param authUser The X-Goog-AuthUser value (account slot, usually "0")
+     */
+    suspend fun saveAuthHeaders(
+        cookieString: String,
+        authorization: String,
+        authUser: String = "0"
+    ) {
+        val sapisid = extractSapisid(cookieString)
+        if (sapisid == null) {
+            Log.w(TAG, "SAPISID not found in cookie string — session may not be authenticated")
+        }
+
+        context.ytmDataStore.edit { prefs ->
+            prefs[KEY_COOKIE_STRING] = cookieString
+            prefs[KEY_AUTHORIZATION] = authorization
+            prefs[KEY_AUTH_USER] = authUser
+            if (sapisid != null) prefs[KEY_SAPISID] = sapisid
+        }
+        Log.d(TAG, "YTM auth headers saved (authUser=$authUser, hasSapisid=${sapisid != null})")
+    }
+
+    /**
+     * Returns the stored auth headers in browser.json format for Python backend.
+     */
+    suspend fun getAuthHeaders(): Map<String, String>? {
+        return context.ytmDataStore.data.map { prefs ->
+            val cookie = prefs[KEY_COOKIE_STRING]
+            val auth = prefs[KEY_AUTHORIZATION]
+            
+            if (cookie != null && auth != null) {
+                mapOf(
+                    "Accept" to "*/*",
+                    "Authorization" to auth,
+                    "Content-Type" to "application/json",
+                    "Cookie" to cookie,
+                    "X-Goog-AuthUser" to (prefs[KEY_AUTH_USER] ?: "0"),
+                    "x-origin" to "https://music.youtube.com"
+                )
+            } else null
+        }.firstOrNull()
+    }
+
+    /**
      * Persists the cookies extracted from the WebView after a successful login.
      * Also parses and stores the SAPISID cookie separately for hash computation.
      *
      * @param rawCookieString The full `Cookie` header string e.g.
      *   "SAPISID=abc123; __Secure-3PAPISID=xyz; SID=…"
      * @param email Optional user email for display in the AccountsScreen card.
+     * 
+     * @deprecated Use saveAuthHeaders() instead for full authentication support
      */
+    @Deprecated("Use saveAuthHeaders() for complete auth with HttpOnly cookies")
     suspend fun saveCookies(rawCookieString: String, email: String? = null) {
         val sapisid = extractSapisid(rawCookieString)
         if (sapisid == null) {

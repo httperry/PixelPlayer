@@ -10,12 +10,19 @@ import javax.inject.Singleton
  * Local HTTP proxy server for streaming YouTube Music audio.
  *
  * Resolves `ytmusic://{videoId}` URIs by fetching streaming URLs
- * from YouTube using NewPipe extractor and proxying the audio data to ExoPlayer.
+ * from YouTube using the Python yt-dlp backend (via WebSocket) and
+ * proxying the audio data to ExoPlayer.
+ *
+ * This replaces the previous NewPipe Extractor-based approach. yt-dlp is:
+ * - More actively maintained (handles YouTube cipher updates faster)
+ * - Better at handling YouTube's evolving anti-bot measures
+ * - Runs entirely in the existing Python/Chaquopy process (no extra Java dependency)
  */
 @Singleton
 class YTMusicStreamProxy @Inject constructor(
-    private val newPipeExtractor: NewPipeYTMusicExtractor,
-    okHttpClient: OkHttpClient
+    private val webSocketClient: YTMusicWebSocketClient,
+    okHttpClient: OkHttpClient,
+    @dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context
 ) : CloudStreamProxy<String>(okHttpClient) {
 
     override val allowedHostSuffixes = setOf(
@@ -24,10 +31,10 @@ class YTMusicStreamProxy @Inject constructor(
         "ytimg.com",
         "ggpht.com"
     )
-    
+
     // YouTube URLs expire after ~6 hours, cache for 5 hours to be safe
     override val cacheExpirationMs = 5L * 60 * 60 * 1000
-    
+
     override val proxyTag = "YTMusicStreamProxy"
     override val routePath = "/ytmusic/{videoId}"
     override val routeParamName = "videoId"
@@ -50,16 +57,67 @@ class YTMusicStreamProxy @Inject constructor(
 
     override fun formatIdForUrl(id: String): String = id
 
+    private val prefs = context.getSharedPreferences("ytm_stream_cache", android.content.Context.MODE_PRIVATE)
+
+    init {
+        val editor = prefs.edit()
+        val now = System.currentTimeMillis()
+        var cleaned = 0
+        prefs.all.keys.filter { it.startsWith("expiry_") }.forEach { expiryKey ->
+            val expiry = prefs.getLong(expiryKey, 0)
+            if (now > expiry) {
+                val id = expiryKey.removePrefix("expiry_")
+                editor.remove("url_$id")
+                editor.remove(expiryKey)
+                cleaned++
+            }
+        }
+        if (cleaned > 0) {
+            editor.apply()
+            Timber.d("$proxyTag: Cleaned up $cleaned expired stream URLs from cache")
+        }
+    }
+
+    override suspend fun getOrFetchStreamUrl(id: String): String? {
+        val cachedUrl = prefs.getString("url_$id", null)
+        val expiry = prefs.getLong("expiry_$id", 0)
+        
+        if (cachedUrl != null && System.currentTimeMillis() < expiry) {
+            Timber.d("$proxyTag: Using persistent cached stream URL for $id")
+            return cachedUrl
+        }
+        
+        val url = super.getOrFetchStreamUrl(id)
+        if (url != null) {
+            prefs.edit()
+                .putString("url_$id", url)
+                .putLong("expiry_$id", System.currentTimeMillis() + cacheExpirationMs)
+                .apply()
+        }
+        return url
+    }
+
+    /**
+     * Resolve the stream URL for a YouTube video ID via the Python yt-dlp backend.
+     *
+     * The WebSocket request goes to ytmusic_websocket_server.py which calls yt-dlp
+     * in a thread pool executor so it doesn't block the async event loop.
+     * Results are also cached server-side for 5 hours.
+     */
     override suspend fun resolveStreamUrl(id: String): String? {
         return try {
-            Timber.d("$proxyTag: Resolving stream URL for video ID: $id")
-            val streamUrl = newPipeExtractor.getStreamUrl(id)
-            if (streamUrl != null) {
-                Timber.d("$proxyTag: Successfully resolved stream URL for $id")
-            } else {
-                Timber.w("$proxyTag: Failed to resolve stream URL for $id")
-            }
-            streamUrl
+            Timber.d("$proxyTag: Resolving stream URL for video ID: $id via yt-dlp Python backend")
+            val result = webSocketClient.getStreamUrl(id)
+            result.fold(
+                onSuccess = { streamUrl ->
+                    Timber.d("$proxyTag: Successfully resolved stream URL for $id")
+                    streamUrl
+                },
+                onFailure = { error ->
+                    Timber.w("$proxyTag: Failed to resolve stream URL for $id: ${error.message}")
+                    null
+                }
+            )
         } catch (e: Exception) {
             Timber.e(e, "$proxyTag: Error resolving stream URL for $id")
             null
@@ -68,8 +126,8 @@ class YTMusicStreamProxy @Inject constructor(
 
     /**
      * Pre-fetches and caches the stream URL for a ytmusic:// URI.
-     * This should be called before playback to ensure the URL is ready.
-     * 
+     * Call this before playback to ensure the URL is ready when ExoPlayer needs it.
+     *
      * @return true if the stream URL was successfully resolved and cached, false otherwise
      */
     suspend fun warmUpStreamUrl(uriString: String): Boolean {
@@ -78,7 +136,7 @@ class YTMusicStreamProxy @Inject constructor(
         val rawId = extractIdFromUri(uri) ?: return false
         val id = parseRouteParam(rawId) ?: return false
         if (!validateId(id)) return false
-        
+
         // Pre-fetch the stream URL to warm up the cache
         val streamUrl = getOrFetchStreamUrl(id)
         return !streamUrl.isNullOrBlank()

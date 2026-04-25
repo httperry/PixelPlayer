@@ -341,12 +341,12 @@ class DualPlayerEngine @Inject constructor(
                         return dataSpec.buildUpon().setUri(resolved).build()
                     }
                     
-                    Timber.tag("DualPlayerEngine").w("resolveDataSpec: cache MISS for %s — scheduling async pre-resolution", originalUri)
-                    scope.launch(Dispatchers.IO) {
-                        runCatching { resolveCloudUri(uri) }
-                            .onFailure { error ->
-                                Timber.tag("DualPlayerEngine").e(error, "resolveDataSpec: Async resolution failed for %s", originalUri)
-                            }
+                    Timber.tag("DualPlayerEngine").w("resolveDataSpec: cache MISS for %s — blocking to resolve", originalUri)
+                    val blockingResolved = kotlinx.coroutines.runBlocking {
+                        runCatching { resolveCloudUri(uri) }.getOrNull()
+                    }
+                    if (blockingResolved != null && blockingResolved != uri) {
+                        return dataSpec.buildUpon().setUri(blockingResolved).build()
                     }
                 }
                 return dataSpec

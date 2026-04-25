@@ -112,12 +112,8 @@ fun PlaylistContainer(
 ) {
 
     Column(modifier = Modifier.fillMaxSize()) {
-        if (playlistUiState.isLoading && filteredPlaylists.isEmpty()) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) { CircularProgressIndicator() }
-        }
+        // Never block with a full-screen spinner — if loading, show cached content
+        // and let it refresh in the background (pull-to-refresh handles user-triggered refreshes)
 
         if (filteredPlaylists.isEmpty() && !playlistUiState.isLoading) {
             Box(
@@ -280,7 +276,10 @@ fun PlaylistItems(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             contentPadding = PaddingValues(bottom = bottomBarHeight + MiniPlayerHeight + 30.dp)
         ) {
-            items(filteredPlaylists, key = { it.id }) { playlist ->
+            items(filteredPlaylists, key = { playlist -> 
+                // Ensure unique non-empty keys
+                if (playlist.id.isBlank()) "empty_${playlist.name}_${playlist.createdAt}" else playlist.id 
+            }) { playlist ->
                 val rememberedOnClick = remember(playlist.id) {
                     {
                         if (isAddingToPlaylist && currentSong != null && selectedPlaylists != null) {
@@ -495,11 +494,18 @@ fun PlaylistItem(
                         )
                     }
                 }
-                Text(
-                    text = "${playlist.songIds.size} Songs",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                val trackCount = playlist.externalTrackCount ?: playlist.songIds.size
+                // For YTM playlists: if count is 0 it means we haven't fetched the tracks yet
+                // (they're online-only). Don't show "0 Songs" — show nothing until the real
+                // count is known (persisted after the user opens the playlist).
+                val showCount = if (playlist.source == "YTM") trackCount > 0 else true
+                if (showCount) {
+                    Text(
+                        text = "$trackCount Songs",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
 
             if (isSelected && isSelectionMode) {

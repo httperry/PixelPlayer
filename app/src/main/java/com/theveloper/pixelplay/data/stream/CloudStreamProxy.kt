@@ -158,7 +158,7 @@ abstract class CloudStreamProxy<K : Any>(
 
     // ─── Internal ──────────────────────────────────────────────────────
 
-    protected suspend fun getOrFetchStreamUrl(id: K): String? {
+    protected open suspend fun getOrFetchStreamUrl(id: K): String? {
         urlCache[id]?.let { cached ->
             if (!cached.isExpired()) return cached.url
         }

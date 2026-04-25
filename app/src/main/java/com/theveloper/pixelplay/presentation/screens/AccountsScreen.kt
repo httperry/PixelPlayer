@@ -5,6 +5,8 @@ package com.theveloper.pixelplay.presentation.screens
 import android.content.Context
 import android.content.Intent
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -100,6 +102,22 @@ fun AccountsScreen(
 ) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    
+    // Activity result launcher for YT Music login
+    val ytMusicLoginLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        when (result.resultCode) {
+            YTLoginActivity.RESULT_AUTH_SUCCESS -> {
+                // Refresh the ViewModel to show connected state
+                viewModel.refreshYTMusicState()
+                Toast.makeText(context, "YouTube Music connected!", Toast.LENGTH_SHORT).show()
+            }
+            YTLoginActivity.RESULT_AUTH_FAILED -> {
+                Toast.makeText(context, "Authentication failed. Please try again.", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
 
     val density = LocalDensity.current
     val coroutineScope = rememberCoroutineScope()
@@ -211,7 +229,8 @@ fun AccountsScreen(
                                 onOpenQqMusicDashboard = onOpenQqMusicDashboard,
                                 onOpenNavidromeDashboard = onOpenNavidromeDashboard,
                                 onOpenJellyfinDashboard = onOpenJellyfinDashboard,
-                                preferNeteaseDashboard = true
+                                preferNeteaseDashboard = true,
+                                ytMusicLoginLauncher = ytMusicLoginLauncher
                             )
                         },
                         onLogout = { viewModel.logout(account.service) },
@@ -236,7 +255,8 @@ fun AccountsScreen(
                                 onOpenQqMusicDashboard = onOpenQqMusicDashboard,
                                 onOpenNavidromeDashboard = onOpenNavidromeDashboard,
                                 onOpenJellyfinDashboard = onOpenJellyfinDashboard,
-                                preferNeteaseDashboard = false
+                                preferNeteaseDashboard = false,
+                                ytMusicLoginLauncher = ytMusicLoginLauncher
                             )
                         }
                     )
@@ -723,7 +743,8 @@ private fun openService(
     onOpenQqMusicDashboard: () -> Unit,
     onOpenNavidromeDashboard: () -> Unit,
     onOpenJellyfinDashboard: () -> Unit,
-    preferNeteaseDashboard: Boolean
+    preferNeteaseDashboard: Boolean,
+    ytMusicLoginLauncher: androidx.activity.result.ActivityResultLauncher<Intent>? = null
 ) {
     when (service) {
         ExternalServiceAccount.TELEGRAM -> {
@@ -776,10 +797,12 @@ private fun openService(
             }
         }
         ExternalServiceAccount.YOUTUBE_MUSIC -> {
-            safeStartActivity(
-                context = context,
-                intent = Intent(context, YTLoginActivity::class.java)
-            )
+            val intent = Intent(context, YTLoginActivity::class.java)
+            if (ytMusicLoginLauncher != null) {
+                ytMusicLoginLauncher.launch(intent)
+            } else {
+                safeStartActivity(context = context, intent = intent)
+            }
         }
     }
 }

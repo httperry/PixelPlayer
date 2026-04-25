@@ -257,7 +257,10 @@ object YTMusicResponseParser {
      * Parse playlist into simplified model.
      */
     fun parsePlaylist(playlist: Map<String, Any>): Map<String, Any> {
-        val id = playlist["id"] as? String ?: ""
+        // ytmusicapi uses 'playlistId' for library playlists but 'id' for other contexts
+        val id = (playlist["playlistId"] as? String)
+            ?: (playlist["id"] as? String)
+            ?: ""
         val title = playlist["title"] as? String ?: "Unknown"
         val description = playlist["description"] as? String ?: ""
         val count = (playlist["count"] as? Number)?.toInt() ?: 0

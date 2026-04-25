@@ -71,6 +71,7 @@ import com.theveloper.pixelplay.data.service.player.CastPlayer
 import com.theveloper.pixelplay.data.service.http.MediaFileHttpServerService
 import com.theveloper.pixelplay.data.service.player.DualPlayerEngine
 import com.theveloper.pixelplay.data.worker.SyncManager
+import com.theveloper.pixelplay.data.network.ytmusic.YTMusicRepository
 import com.theveloper.pixelplay.utils.AppShortcutManager
 import com.theveloper.pixelplay.utils.ValidatedLyricsImport
 import com.theveloper.pixelplay.utils.QueueUtils
@@ -161,13 +162,16 @@ data class PlaybackAudioMetadata(
     val bitDepth: Int? = null
 )
 
-private data class SortOptionsSnapshot(
-    val songSort: SortOption,
-    val albumSort: SortOption,
-    val artistSort: SortOption,
-    val folderSort: SortOption,
-    val favoriteSort: SortOption,
-)
+    data class Quadruple<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
+
+    // Data classes to group values emitted from combines
+    private data class SortOptionsSnapshot(
+        val songSort: SortOption,
+        val albumSort: SortOption,
+        val artistSort: SortOption,
+        val folderSort: SortOption,
+        val favoriteSort: SortOption
+    )
 
 private data class AiUiSnapshot(
     val showAiPlaylistSheet: Boolean,
@@ -215,6 +219,7 @@ class PlayerViewModel @Inject constructor(
     private val albumArtThemeDao: AlbumArtThemeDao,
     val syncManager: SyncManager, // Inyectar SyncManager
     val crowdSyncManager: com.theveloper.pixelplay.data.network.crowd.CrowdSyncManager, // Inject CrowdSyncManager
+    private val ytMusicRepository: YTMusicRepository,
 
     private val dualPlayerEngine: DualPlayerEngine,
     private val appShortcutManager: AppShortcutManager,
@@ -254,6 +259,11 @@ class PlayerViewModel @Inject constructor(
         onBufferOverflow = BufferOverflow.DROP_OLDEST
     )
     val showNoInternetDialog: SharedFlow<Unit> = _showNoInternetDialog.asSharedFlow()
+
+    /** True when the current playback queue was initiated as a YTM radio queue. */
+    private var isYtmRadioQueue = false
+    /** Prevents concurrent radio auto-extend fetches. */
+    private var radioExtendJob: Job? = null
 
     val stablePlayerState: StateFlow<StablePlayerState> = playbackStateHolder.stablePlayerState
     /**
@@ -307,6 +317,40 @@ class PlayerViewModel @Inject constructor(
         connectivityStateHolder.offlinePlaybackBlocked.collect {
             Timber.w("Received offline blocked event. Showing dialog.")
             _showNoInternetDialog.emit(Unit)
+        }
+    }
+
+    /**
+     * Observes the online/offline state. When the device reconnects after being offline,
+     * and the player is stuck in an ERROR or IDLE state (stream failed due to disconnect),
+     * automatically retry preparing the current media item so playback resumes seamlessly.
+     */
+    private val networkReconnectRetryJob = viewModelScope.launch {
+        var wasOffline = false
+        connectivityStateHolder.isOnline.collect { isOnline ->
+            if (!isOnline) {
+                wasOffline = true
+                Log.d("NetworkRetry", "Network disconnected — will auto-retry on reconnect")
+            } else if (wasOffline) {
+                wasOffline = false
+                Log.d("NetworkRetry", "Network reconnected — checking if player needs retry")
+                val controller = mediaController ?: return@collect
+                val state = controller.playbackState
+                if (state == androidx.media3.common.Player.STATE_IDLE ||
+                    state == androidx.media3.common.Player.STATE_ENDED) {
+                    val currentSong = playbackStateHolder.stablePlayerState.value.currentSong
+                    if (currentSong?.contentUriString?.startsWith("ytm://") == true ||
+                        currentSong?.ytmusicId != null) {
+                        Log.d("NetworkRetry", "Retrying YTM stream for: ${currentSong.title}")
+                        try {
+                            controller.prepare()
+                            controller.play()
+                        } catch (e: Exception) {
+                            Log.e("NetworkRetry", "Auto-retry failed: ${e.message}")
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -1811,14 +1855,16 @@ class PlayerViewModel @Inject constructor(
                 searchStateHolder.searchResults,
                 searchStateHolder.selectedSearchFilter,
                 searchStateHolder.searchHistory,
-            ) { results, filter, history ->
-                Triple(results, filter, history)
-            }.collect { (results, filter, history) ->
+                searchStateHolder.isYtmSearching
+            ) { results, filter, history, isSearching ->
+                Quadruple(results, filter, history, isSearching)
+            }.collect { (results, filter, history, isSearching) ->
                 _playerUiState.update {
                     it.copy(
                         searchResults = results,
                         selectedSearchFilter = filter,
                         searchHistory = history,
+                        isYtmSearching = isSearching
                     )
                 }
             }
@@ -2147,6 +2193,48 @@ class PlayerViewModel @Inject constructor(
         Log.d("ShuffleDebug", "showAndPlaySong (single song overload) called for '${song.title}'")
         // Use the song directly without scanning allSongs — the caller provides up-to-date data
         showAndPlaySong(song, listOf(song), "Library")
+    }
+
+    /**
+     * Play a YTM search result song and queue up YTM radio recommendations.
+     * Starts playback immediately with just the song, then fetches and appends
+     * the radio queue in the background so the user gets seamless continuous playback
+     * powered by YouTube Music's taste-based recommendations.
+     */
+    fun playYtmSongWithRadio(song: Song) {
+        // Step 1: play immediately so there's zero delay
+        showAndPlaySong(song, listOf(song), song.title)
+        _isSheetVisible.value = true
+
+        val videoId = song.ytmusicId ?: song.id
+        if (videoId.isBlank()) return
+
+        // Step 2: fetch radio queue in background and append to player
+        viewModelScope.launch {
+            try {
+                Log.d("YTMRadio", "Fetching radio queue for $videoId")
+                val radioSongs = ytMusicRepository.getRadioQueue(videoId)
+                if (radioSongs.isNotEmpty()) {
+                    // Build the new queue: current song + radio tracks (skip if already present)
+                    val combined = listOf(song) + radioSongs.filter { it.id != song.id }
+                    Log.d("YTMRadio", "Radio queue ready: ${combined.size} tracks")
+                    // Replace the media items in the controller, keeping current song playing
+                    mediaController?.let { controller ->
+                        val mediaItems = combined.map { s ->
+                            com.theveloper.pixelplay.utils.MediaItemBuilder.build(s)
+                        }
+                        val currentIdx = controller.currentMediaItemIndex
+                        controller.setMediaItems(mediaItems, currentIdx, controller.currentPosition)
+                        _playerUiState.update { it.copy(currentPlaybackQueue = combined.toPlaybackQueue()) }
+                        isYtmRadioQueue = true // Mark this queue as a YTM radio queue for auto-extend
+                    }
+                } else {
+                    Log.w("YTMRadio", "Empty radio queue for $videoId")
+                }
+            } catch (e: Exception) {
+                Log.e("YTMRadio", "Failed to fetch radio queue: ${e.message}", e)
+            }
+        }
     }
 
     private fun List<Song>.matchesSongOrder(contextSongs: List<Song>): Boolean {
@@ -2749,6 +2837,42 @@ class PlayerViewModel @Inject constructor(
                                 themeStateHolder.extractAndGenerateColorScheme(uri, currentUri)
                             }
                             loadLyricsForCurrentSong()
+
+                            // ── Auto-extend YTM radio queue (unlimited Autoplay) ─────────────
+                            // When 2 or fewer songs remain in a YTM radio queue and repeat is OFF,
+                            // fetch more recommended songs and append them seamlessly.
+                            if (isYtmRadioQueue &&
+                                playerCtrl.repeatMode == Player.REPEAT_MODE_OFF &&
+                                (currentSongValue.ytmusicId != null || currentSongValue.contentUriString.startsWith("ytm://"))
+                            ) {
+                                val currentIdx = playerCtrl.currentMediaItemIndex
+                                val totalItems = playerCtrl.mediaItemCount
+                                if (totalItems - currentIdx <= 2 && radioExtendJob?.isActive != true) {
+                                    val seedVideoId = currentSongValue.ytmusicId ?: currentSongValue.id
+                                    radioExtendJob = viewModelScope.launch {
+                                        try {
+                                            Log.d("YTMRadio", "Auto-extending queue from $seedVideoId (${totalItems - currentIdx} items left)")
+                                            val moreSongs = ytMusicRepository.getRadioQueue(seedVideoId)
+                                            if (moreSongs.isNotEmpty()) {
+                                                val existingIds = (0 until playerCtrl.mediaItemCount)
+                                                    .map { playerCtrl.getMediaItemAt(it).mediaId }
+                                                    .toSet()
+                                                val newSongs = moreSongs.filter { it.id !in existingIds }
+                                                val newItems = newSongs.map { com.theveloper.pixelplay.utils.MediaItemBuilder.build(it) }
+                                                if (newItems.isNotEmpty()) {
+                                                    playerCtrl.addMediaItems(newItems)
+                                                    val updatedQueue = _playerUiState.value.currentPlaybackQueue.toMutableList()
+                                                    updatedQueue.addAll(newSongs)
+                                                    _playerUiState.update { it.copy(currentPlaybackQueue = updatedQueue.toPlaybackQueue()) }
+                                                    Log.d("YTMRadio", "Appended ${newItems.size} songs — queue now ${playerCtrl.mediaItemCount} items")
+                                                }
+                                            }
+                                        } catch (e: Exception) {
+                                            Log.e("YTMRadio", "Radio auto-extend failed: ${e.message}")
+                                        }
+                                    }
+                                }
+                            }
                         }
                     } ?: run {
                         if (!isCastConnecting.value && !isRemotePlaybackActive.value) {
@@ -3980,8 +4104,12 @@ class PlayerViewModel @Inject constructor(
         searchStateHolder.onSearchQuerySubmitted(query)
     }
 
-    fun performSearch(query: String) {
-        searchStateHolder.performSearch(query)
+    fun onSearchQueryChanged(query: String) {
+        searchStateHolder.onSearchQueryChanged(query)
+    }
+
+    fun forceFullSearch(query: String) {
+        searchStateHolder.forceFullSearch(query)
     }
 
     fun deleteSearchHistoryItem(query: String) {

@@ -51,7 +51,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.theveloper.pixelplay"
+        applicationId = "com.httperry.pixelplayer"
         minSdk = 29
         targetSdk = 35
         versionCode = (project.findProperty("APP_VERSION_CODE") as String).toInt()
@@ -77,9 +77,12 @@ android {
             
             pip {
                 // Install packages compatible with Python 3.11
-                install("ytmusicapi==1.8.1")
-                install("websockets==12.0")
-                install("requests>=2.31.0")
+                install("ytmusicapi")  // Latest version for best compatibility
+                install("websockets")  // Latest version
+                install("requests")    // Latest version
+                // yt-dlp: replaces NewPipe Extractor for YouTube stream URL resolution
+                // Using LATEST version for best YouTube compatibility and format support
+                install("yt-dlp")
                 // Note: cryptography removed - not compatible with Chaquopy
                 // WebSocket server modified to work without encryption (localhost only)
             }
@@ -317,6 +320,7 @@ dependencies {
 
     // Media3 ExoPlayer
     implementation(libs.androidx.media3.exoplayer)
+    implementation(libs.androidx.media3.exoplayer.hls)
     implementation(libs.androidx.media3.ui)
     implementation(libs.androidx.media3.session)
     implementation(libs.androidx.mediarouter)
@@ -392,8 +396,8 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.logging.interceptor)
 
-    // NewPipe Extractor for YouTube Music streaming
-    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.1")
+    // NewPipe Extractor removed — stream URL resolution now handled by
+    // yt-dlp running in the Python backend (Chaquopy). See ytmusic_websocket_server.py
     
     // yt-dlp Android for comprehensive YouTube Music support - removed due to unavailability
     // implementation("com.github.yausername.youtubedl-android:library:0.16.0")
