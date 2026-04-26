@@ -122,6 +122,8 @@ abstract class CloudStreamProxy<K : Any>(
         return getProxyUrl(id)
     }
 
+    protected open suspend fun customHeaders(): Map<String, String> = emptyMap()
+
     fun start() {
         startJob?.cancel()
         startJob = proxyScope.launch {
@@ -217,6 +219,10 @@ abstract class CloudStreamProxy<K : Any>(
                         val requestBuilder = Request.Builder().url(streamUrl)
                         rangeValidation.normalizedHeader?.let {
                             requestBuilder.header("Range", it)
+                        }
+
+                        customHeaders().forEach { (k, v) ->
+                            requestBuilder.header(k, v)
                         }
 
                         val response = withContext(Dispatchers.IO) {

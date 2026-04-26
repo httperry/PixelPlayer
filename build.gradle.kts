@@ -3,11 +3,9 @@ buildscript {
     repositories {
         google()
         mavenCentral()
-        maven { url = uri("https://chaquo.com/maven") }
     }
     dependencies {
         // Updated to latest version for better Python 3.11+ support
-        classpath("com.chaquo.python:gradle:16.1.0")
     }
 }
 

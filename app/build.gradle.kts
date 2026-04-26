@@ -10,8 +10,6 @@ plugins {
     id("kotlin-parcelize")
 }
 
-// Apply Chaquopy after Android plugin
-apply(plugin = "com.chaquo.python")
 
 val enableAbiSplits = providers.gradleProperty("pixelplay.enableAbiSplits")
     .orElse("false")
@@ -65,29 +63,7 @@ android {
         }
     }
     
-    // Chaquopy Python configuration
-    extensions.configure<com.chaquo.python.ChaquopyExtension> {
-        defaultConfig {
-            // Use Python 3.11 (supports all ABIs including armeabi-v7a)
-            version = "3.11"
-            
-            // Tell Chaquopy to use your system Python 3.12 for BUILD TIME
-            // (Chaquopy will still bundle Python 3.11 for runtime)
-            buildPython("/usr/local/bin/python3")
-            
-            pip {
-                // Install packages compatible with Python 3.11
-                install("ytmusicapi")  // Latest version for best compatibility
-                install("websockets")  // Latest version
-                install("requests")    // Latest version
-                // yt-dlp: replaces NewPipe Extractor for YouTube stream URL resolution
-                // Using LATEST version for best YouTube compatibility and format support
-                install("yt-dlp")
-                // Note: cryptography removed - not compatible with Chaquopy
-                // WebSocket server modified to work without encryption (localhost only)
-            }
-        }
-    }
+
 
     buildTypes {
         debug {
@@ -425,6 +401,7 @@ dependencies {
 
     // Wear OS Data Layer
     implementation(project(":shared"))
+    implementation(project(":innertube"))
     implementation(libs.play.services.wearable)
     implementation(libs.kotlinx.coroutines.play.services)
 
@@ -450,18 +427,4 @@ tasks.withType<Test> {
     useJUnitPlatform()
 }
 
-// Task to clean Python cache and force rebuild with Python 3.11
-tasks.register("cleanPythonCache") {
-    group = "build"
-    description = "Deletes cached Python environment to force Chaquopy to use Python 3.11"
-    doLast {
-        val pythonDir = file("${layout.buildDirectory.get().asFile}/python")
-        if (pythonDir.exists()) {
-            pythonDir.deleteRecursively()
-            println("✓ Deleted Python cache at ${pythonDir.absolutePath}")
-            println("✓ Next build will use Python 3.11 as configured")
-        } else {
-            println("ℹ Python cache directory doesn't exist yet")
-        }
-    }
-}
+

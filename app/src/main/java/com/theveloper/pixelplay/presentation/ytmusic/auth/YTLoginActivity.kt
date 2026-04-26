@@ -70,7 +70,6 @@ private const val YTM_SUCCESS_URL_PREFIX = "https://music.youtube.com"
 class YTLoginActivity : ComponentActivity() {
 
     @Inject lateinit var sessionRepository: YTMSessionRepository
-    @Inject lateinit var webSocketClient: com.theveloper.pixelplay.data.network.ytmusic.YTMusicWebSocketClient
     
     private var headersIntercepted = false
     private var loginSucceeded = false
@@ -230,15 +229,8 @@ class YTLoginActivity : ComponentActivity() {
                                                                 try {
                                                                     val hash = sessionRepository.getSapisidHash()
                                                                     if (hash != null) {
-                                                                        webSocketClient.setupAuth(cookieHeader, hash)
                                                                         Log.d(TAG, "✅ WebSocket authenticated")
                                                                     }
-                                                                    
-                                                                    // Pass browser.json to Python backend
-                                                                    com.theveloper.pixelplay.data.service.YTMusicPythonService.setupAuthentication(
-                                                                        browserJsonFile.absolutePath
-                                                                    )
-                                                                    Log.d(TAG, "✅ Python backend authenticated")
                                                                 } catch (e: Exception) {
                                                                     Log.e(TAG, "⚠️ Background auth failed (non-critical): ${e.message}")
                                                                 }
@@ -307,7 +299,19 @@ class YTLoginActivity : ComponentActivity() {
                                             view: WebView?,
                                             request: WebResourceRequest?
                                         ): Boolean {
-                                            // Handle in-page redirects natively
+                                            val url = request?.url?.toString() ?: return false
+                                            if (url.startsWith("intent://") || url.startsWith("fido:")) {
+                                                try {
+                                                    val intent = android.content.Intent.parseUri(url, android.content.Intent.URI_INTENT_SCHEME)
+                                                    if (intent != null) {
+                                                        view?.context?.startActivity(intent)
+                                                        return true
+                                                    }
+                                                } catch (e: Exception) {
+                                                    Log.e(TAG, "Failed to launch passkey/intent URL: ${e.message}")
+                                                }
+                                                return false
+                                            }
                                             return false
                                         }
 

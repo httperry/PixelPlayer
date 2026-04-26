@@ -1,0 +1,74 @@
+WARNING: A restricted method in java.lang.System has been called
+WARNING: java.lang.System::load has been called by net.rubygrapefruit.platform.internal.NativeLibraryLoader in an unnamed module (file:/Users/niranjana/.gradle/wrapper/dists/gradle-8.13-bin/5xuhj0ry160q40clulazy9h7d/gradle-8.13/lib/native-platform-0.22-milestone-28.jar)
+WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
+WARNING: Restricted methods will be blocked in a future release unless native access is enabled
+
+
+> Task :app:compileDebugKotlin FAILED
+e: file:///Users/niranjana/System/PixelPlayer/PixelPlayer/app/src/main/java/com/theveloper/pixelplay/data/network/ytmusic/YTMusicRepository.kt:121:98 Unresolved reference 'SearchFilter'.
+e: file:///Users/niranjana/System/PixelPlayer/PixelPlayer/app/src/main/java/com/theveloper/pixelplay/data/network/ytmusic/YTMusicRepository.kt:145:106 Unresolved reference 'SearchFilter'.
+e: file:///Users/niranjana/System/PixelPlayer/PixelPlayer/app/src/main/java/com/theveloper/pixelplay/data/network/ytmusic/YTMusicRepository.kt:158:106 Unresolved reference 'SearchFilter'.
+e: file:///Users/niranjana/System/PixelPlayer/PixelPlayer/app/src/main/java/com/theveloper/pixelplay/data/network/ytmusic/YTMusicRepository.kt:177:41 Unresolved reference 'PagingData'.
+e: file:///Users/niranjana/System/PixelPlayer/PixelPlayer/app/src/main/java/com/theveloper/pixelplay/data/network/ytmusic/YTMusicRepository.kt:178:20 Unresolved reference 'Pager'.
+e: file:///Users/niranjana/System/PixelPlayer/PixelPlayer/app/src/main/java/com/theveloper/pixelplay/data/network/ytmusic/YTMusicRepository.kt:179:26 Unresolved reference 'PagingConfig'.
+e: file:///Users/niranjana/System/PixelPlayer/PixelPlayer/app/src/main/java/com/theveloper/pixelplay/data/network/ytmusic/YTMusicRepository.kt:181:30 Unresolved reference 'PagingSource'.
+e: file:///Users/niranjana/System/PixelPlayer/PixelPlayer/app/src/main/java/com/theveloper/pixelplay/data/network/ytmusic/YTMusicRepository.kt:182:25 'getRefreshKey' overrides nothing.
+e: file:///Users/niranjana/System/PixelPlayer/PixelPlayer/app/src/main/java/com/theveloper/pixelplay/data/network/ytmusic/YTMusicRepository.kt:182:59 Unresolved reference 'PagingState'.
+e: file:///Users/niranjana/System/PixelPlayer/PixelPlayer/app/src/main/java/com/theveloper/pixelplay/data/network/ytmusic/YTMusicRepository.kt:183:25 'load' overrides nothing.
+e: file:///Users/niranjana/System/PixelPlayer/PixelPlayer/app/src/main/java/com/theveloper/pixelplay/data/network/ytmusic/YTMusicRepository.kt:183:59 Unresolved reference 'LoadParams'.
+e: file:///Users/niranjana/System/PixelPlayer/PixelPlayer/app/src/main/java/com/theveloper/pixelplay/data/network/ytmusic/YTMusicRepository.kt:183:77 Unresolved reference 'LoadResult'.
+e: file:///Users/niranjana/System/PixelPlayer/PixelPlayer/app/src/main/java/com/theveloper/pixelplay/data/network/ytmusic/YTMusicRepository.kt:186:77 Unresolved reference 'LoadResult'.
+e: file:///Users/niranjana/System/PixelPlayer/PixelPlayer/app/src/main/java/com/theveloper/pixelplay/data/network/ytmusic/YTMusicRepository.kt:188:33 Unresolved reference 'LoadResult'.
+e: file:///Users/niranjana/System/PixelPlayer/PixelPlayer/app/src/main/java/com/theveloper/pixelplay/data/network/ytmusic/YTMusicRepository.kt:190:33 Unresolved reference 'LoadResult'.
+e: file:///Users/niranjana/System/PixelPlayer/PixelPlayer/app/src/main/java/com/theveloper/pixelplay/data/network/ytmusic/YTMusicRepository.kt:198:46 Unresolved reference 'YTMPlaylist'.
+e: file:///Users/niranjana/System/PixelPlayer/PixelPlayer/app/src/main/java/com/theveloper/pixelplay/data/network/ytmusic/YTMusicRepository.kt:200:17 Argument type mismatch: actual type is 'it(kotlin.collections.List<R> & kotlin.collections.List<T>)', but 'kotlin.collections.List<ERROR CLASS: Symbol not found for YTMPlaylist>' was expected.
+e: file:///Users/niranjana/System/PixelPlayer/PixelPlayer/app/src/main/java/com/theveloper/pixelplay/data/network/ytmusic/YTMusicRepository.kt:202:74 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///Users/niranjana/System/PixelPlayer/PixelPlayer/app/src/main/java/com/theveloper/pixelplay/data/network/ytmusic/YTMusicRepository.kt:202:74 Argument type mismatch: actual type is 'kotlin.collections.List<T>', but 'kotlin.collections.List<ERROR CLASS: Symbol not found for YTMPlaylist>' was expected.
+e: file:///Users/niranjana/System/PixelPlayer/PixelPlayer/app/src/main/java/com/theveloper/pixelplay/data/network/ytmusic/YTMusicRepository.kt:203:27 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///Users/niranjana/System/PixelPlayer/PixelPlayer/app/src/main/java/com/theveloper/pixelplay/data/network/ytmusic/YTMusicRepository.kt:204:25 Unresolved reference 'YTMPlaylist'.
+e: file:///Users/niranjana/System/PixelPlayer/PixelPlayer/app/src/main/java/com/theveloper/pixelplay/data/network/ytmusic/YTMusicRepository.kt:209:62 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///Users/niranjana/System/PixelPlayer/PixelPlayer/app/src/main/java/com/theveloper/pixelplay/data/network/ytmusic/YTMusicRepository.kt:209:68 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///Users/niranjana/System/PixelPlayer/PixelPlayer/app/src/main/java/com/theveloper/pixelplay/data/network/ytmusic/YTMusicRepository.kt:209:75 Unresolved reference 'MapThumbnail'.
+e: file:///Users/niranjana/System/PixelPlayer/PixelPlayer/app/src/main/java/com/theveloper/pixelplay/data/network/ytmusic/YTMusicRepository.kt:209:104 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///Users/niranjana/System/PixelPlayer/PixelPlayer/app/src/main/java/com/theveloper/pixelplay/data/network/ytmusic/YTMusicRepository.kt:213:21 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///Users/niranjana/System/PixelPlayer/PixelPlayer/app/src/main/java/com/theveloper/pixelplay/data/network/ytmusic/YTMusicRepository.kt:270:71 Argument type mismatch: actual type is 'kotlin.String', but 'com.zionhuang.innertube.models.WatchEndpoint' was expected.
+e: file:///Users/niranjana/System/PixelPlayer/PixelPlayer/app/src/main/java/com/theveloper/pixelplay/data/network/ytmusic/YTMusicRepository.kt:272:49 Unresolved reference 'playlistId'.
+e: file:///Users/niranjana/System/PixelPlayer/PixelPlayer/app/src/main/java/com/theveloper/pixelplay/data/network/ytmusic/YTMusicRepository.kt:274:80 Argument type mismatch: actual type is 'kotlin.Any', but 'kotlin.String' was expected.
+e: file:///Users/niranjana/System/PixelPlayer/PixelPlayer/app/src/main/java/com/theveloper/pixelplay/data/network/ytmusic/YTMusicRepository.kt:391:27 Unresolved reference 'authors'.
+e: file:///Users/niranjana/System/PixelPlayer/PixelPlayer/app/src/main/java/com/theveloper/pixelplay/data/network/ytmusic/YTMusicRepository.kt:391:51 Unresolved reference 'name'.
+e: file:///Users/niranjana/System/PixelPlayer/PixelPlayer/app/src/main/java/com/theveloper/pixelplay/data/network/ytmusic/YTMusicStreamProxy.kt:109:26 Unresolved reference 'webSocketClient'.
+e: file:///Users/niranjana/System/PixelPlayer/PixelPlayer/app/src/main/java/com/theveloper/pixelplay/data/network/ytmusic/YTMusicStreamProxy.kt:110:20 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///Users/niranjana/System/PixelPlayer/PixelPlayer/app/src/main/java/com/theveloper/pixelplay/data/network/ytmusic/YTMusicStreamProxy.kt:110:20 Not enough information to infer type argument for 'T'.
+e: file:///Users/niranjana/System/PixelPlayer/PixelPlayer/app/src/main/java/com/theveloper/pixelplay/data/network/ytmusic/YTMusicStreamProxy.kt:111:31 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///Users/niranjana/System/PixelPlayer/PixelPlayer/app/src/main/java/com/theveloper/pixelplay/data/worker/SyncWorker.kt:1762:42 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///Users/niranjana/System/PixelPlayer/PixelPlayer/app/src/main/java/com/theveloper/pixelplay/data/worker/SyncWorker.kt:1762:42 Unresolved reference. None of the following candidates is applicable because of a receiver type mismatch:
+fun <T, R> Iterable<T>.map(transform: (T) -> R): List<R>
+e: file:///Users/niranjana/System/PixelPlayer/PixelPlayer/app/src/main/java/com/theveloper/pixelplay/data/worker/SyncWorker.kt:1762:46 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///Users/niranjana/System/PixelPlayer/PixelPlayer/app/src/main/java/com/theveloper/pixelplay/data/worker/SyncWorker.kt:1762:51 Unresolved reference 'id'.
+e: file:///Users/niranjana/System/PixelPlayer/PixelPlayer/app/src/main/java/com/theveloper/pixelplay/data/worker/SyncWorker.kt:1762:56 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///Users/niranjana/System/PixelPlayer/PixelPlayer/app/src/main/java/com/theveloper/pixelplay/data/worker/SyncWorker.kt:1762:56 Not enough information to infer type argument for 'T'.
+e: file:///Users/niranjana/System/PixelPlayer/PixelPlayer/app/src/main/java/com/theveloper/pixelplay/data/worker/SyncWorker.kt:1767:36 Unresolved reference 'YTMPlaylist'.
+e: file:///Users/niranjana/System/PixelPlayer/PixelPlayer/app/src/main/java/com/theveloper/pixelplay/data/worker/SyncWorker.kt:1768:34 Suspension functions can only be called within coroutine body.
+e: file:///Users/niranjana/System/PixelPlayer/PixelPlayer/app/src/main/java/com/theveloper/pixelplay/data/worker/SyncWorker.kt:1769:34 Suspension functions can only be called within coroutine body.
+e: file:///Users/niranjana/System/PixelPlayer/PixelPlayer/app/src/main/java/com/theveloper/pixelplay/data/worker/SyncWorker.kt:1769:64 Unresolved reference 'id'.
+e: file:///Users/niranjana/System/PixelPlayer/PixelPlayer/app/src/main/java/com/theveloper/pixelplay/data/worker/SyncWorker.kt:1769:77 Unresolved reference 'songIds'.
+e: file:///Users/niranjana/System/PixelPlayer/PixelPlayer/app/src/main/java/com/theveloper/pixelplay/di/AppModule.kt:525:5 This annotation is not repeatable.
+e: file:///Users/niranjana/System/PixelPlayer/PixelPlayer/app/src/main/java/com/theveloper/pixelplay/di/AppModule.kt:526:5 This annotation is not repeatable.
+e: file:///Users/niranjana/System/PixelPlayer/PixelPlayer/app/src/main/java/com/theveloper/pixelplay/presentation/viewmodel/PlaylistViewModel.kt:236:55 Unresolved reference 'getPlaylistTracks'.
+e: file:///Users/niranjana/System/PixelPlayer/PixelPlayer/app/src/main/java/com/theveloper/pixelplay/presentation/ytmusic/dashboard/YTMusicDashboardViewModel.kt:50:40 Unresolved reference 'getHomeDiscoverFeed'.
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':app:compileDebugKotlin'.
+> A failure occurred while executing org.jetbrains.kotlin.compilerRunner.GradleCompilerRunnerWithWorkers$GradleKotlinCompilerWorkAction
+   > Compilation error. See log for more details
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights.
+> Get more help at https://help.gradle.org.
+
+BUILD FAILED in 27s
+55 actionable tasks: 2 executed, 53 up-to-date

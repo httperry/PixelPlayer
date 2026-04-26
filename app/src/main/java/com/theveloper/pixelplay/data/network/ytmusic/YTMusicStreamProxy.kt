@@ -20,7 +20,6 @@ import javax.inject.Singleton
  */
 @Singleton
 class YTMusicStreamProxy @Inject constructor(
-    private val webSocketClient: YTMusicWebSocketClient,
     okHttpClient: OkHttpClient,
     @dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context
 ) : CloudStreamProxy<String>(okHttpClient) {
@@ -106,18 +105,15 @@ class YTMusicStreamProxy @Inject constructor(
      */
     override suspend fun resolveStreamUrl(id: String): String? {
         return try {
-            Timber.d("$proxyTag: Resolving stream URL for video ID: $id via yt-dlp Python backend")
-            val result = webSocketClient.getStreamUrl(id)
-            result.fold(
-                onSuccess = { streamUrl ->
-                    Timber.d("$proxyTag: Successfully resolved stream URL for $id")
-                    streamUrl
-                },
-                onFailure = { error ->
-                    Timber.w("$proxyTag: Failed to resolve stream URL for $id: ${error.message}")
-                    null
-                }
-            )
+            Timber.d("$proxyTag: Resolving stream URL for video ID: $id via inner tube")
+            val playerResult = com.zionhuang.innertube.YouTube.player(id)
+            val response = playerResult.getOrNull()
+            
+            val audioFormat = response?.streamingData?.adaptiveFormats
+                ?.filter { it.isAudio }
+                ?.maxByOrNull { it.bitrate }
+
+            return audioFormat?.url ?: response?.streamingData?.formats?.firstOrNull()?.url
         } catch (e: Exception) {
             Timber.e(e, "$proxyTag: Error resolving stream URL for $id")
             null

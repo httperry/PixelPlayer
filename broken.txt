@@ -1,0 +1,531 @@
+            Log.d(TAG, "WebSocket not connected, attempting connection...")
+            
+            // Wait for Python server to be ready (max 10 seconds)
+            var retries = 0
+            while (!YTMusicPythonService.isRunning() && retries < 20) {
+                kotlinx.coroutines.delay(500)
+                retries++
+            }
+            
+            if (!YTMusicPythonService.isRunning()) {
+                Log.e(TAG, "Python server not running after 10 seconds, falling back to cache")
+                return cacheProvider?.invoke()
+            }
+            
+            // Python server is ready, connect WebSocket
+            connectWithRetry()
+            
+            // Wait for connection (max 5 seconds)
+            retries = 0
+                kotlinx.coroutines.delay(500)
+                retries++
+            }
+            
+                Log.e(TAG, "WebSocket connection failed after 5 seconds, falling back to cache")
+                return cacheProvider?.invoke()
+            }
+        }
+        
+        return try {
+            operation()
+        } catch (e: Exception) {
+            Log.w(TAG, "WebSocket operation failed: ${e.message}. Attempting retry...")
+
+            // Try reconnecting if not connected
+                connectWithRetry()
+                kotlinx.coroutines.delay(1000) // Wait for connection
+
+                // Retry operation once
+                try {
+                    return operation()
+                } catch (retryError: Exception) {
+                    Log.e(TAG, "Retry failed: ${retryError.message}. Falling back to cache.")
+                }
+            }
+
+            // Fall back to cache if available
+            cacheProvider?.invoke()
+        }
+    }
+
+    // =========================================================================
+    // SEARCH — Progressive loading (10 results immediately, 10 more in background)
+    // =========================================================================
+
+    /**
+     * Search YouTube Music for songs using progressive loading.
+     *
+     * Returns a [Flow] that emits two updates:
+     * 1. First 10 results immediately (low latency — typically < 1s)
+     * 2. All 20 results once the background batch completes
+     *
+     * Collectors should update the UI on each emission.
+     *
+     * Example:
+     * ```kotlin
+     * viewModelScope.launch {
+     *     repo.searchSongsFlow(query).collect { results ->
+     *         _uiState.value = results  // UI updates twice: fast first, complete second
+     *     }
+     * }
+     * ```
+     */
+    fun searchSongsFlow(query: String): Flow<YTMSearchResults> = flow {
+        // With InnerTube, search is fast natively without backend overhead.
+        val searchResult = com.zionhuang.innertube.YouTube.search(query, com.zionhuang.innertube.YouTube.SearchFilter.FILTER_SONG)
+        val items = searchResult.getOrNull()?.items ?: emptyList()
+        val songs = items.mapNotNull { if (it is com.zionhuang.innertube.models.SongItem) it.toDomainSong() else null }
+        songs.forEach { cacheSearchSong(it) }
+        emit(YTMSearchResults(songs = songs, hasMore = false))
+    }
+
+    suspend fun getSearchSuggestions(query: String): List<String> {
+        return withContext(Dispatchers.IO) {
+            try {
+                if (query.isBlank()) return@withContext emptyList()
+                val result = com.zionhuang.innertube.YouTube.searchSuggestions(query)
+                result.getOrNull()?.queries ?: emptyList()
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to get search suggestions: ${e.message}")
+                emptyList()
+            }
+        }
+    }
+
+    /**
+     * Convenience suspend function for callers that don't need progressive loading.
+     * Waits for both batches and returns the complete list.
+     */
+    suspend fun searchSongs(query: String): YTMSearchResults {
+        return withContext(Dispatchers.IO) {
+            try {
+                val searchResult = com.zionhuang.innertube.YouTube.search(query, com.zionhuang.innertube.YouTube.SearchFilter.FILTER_SONG)
+                val items = searchResult.getOrNull()?.items ?: emptyList()
+                val songs = items.mapNotNull { if (it is com.zionhuang.innertube.models.SongItem) it.toDomainSong() else null }
+                songs.forEach { cacheSearchSong(it) }
+                YTMSearchResults(songs = songs)
+            } catch (e: Exception) {
+                Log.e(TAG, "Search failed for '$query': ${e.message}", e)
+                YTMSearchResults()
+            }
+        }
+    }
+
+    private suspend fun cacheSearchSong(song: Song) {
+        try {
+            song.ytmusicId?.let { videoId ->
+                ytMusicDao.insertSong(
+                    com.theveloper.pixelplay.data.database.YTMusicSongEntity(
+                        videoId = videoId,
+                        title = song.title,
+                        artist = song.artist,
+                        thumbnailUrl = song.albumArtUriString ?: "",
+                        durationSeconds = song.duration / 1000,
+                        cachedAt = System.currentTimeMillis(),
+                        lastAccessed = System.currentTimeMillis()
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to cache song ${song.ytmusicId}: ${e.message}")
+        }
+    }
+
+    /**
+     * Search YouTube Music for artists.
+     */
+    suspend fun searchArtists(query: String): List<com.theveloper.pixelplay.data.model.Artist> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val searchResult = com.zionhuang.innertube.YouTube.search(query, com.zionhuang.innertube.YouTube.SearchFilter.FILTER_ARTIST)
+                val items = searchResult.getOrNull()?.items ?: emptyList()
+                items.mapNotNull { item ->
+                    if (item is com.zionhuang.innertube.models.ArtistItem) {
+                        com.theveloper.pixelplay.data.model.Artist(
+                            id = item.id.hashCode().toLong(),
+                            name = item.title,
+                            songCount = 0,
+                            imageUrl = item.thumbnail
+                        )
+                    } else null
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Search artists failed for '$query': ${e.message}", e)
+                emptyList()
+            }
+        }
+    }
+
+    // =========================================================================
+    // LIBRARY & PLAYLISTS
+    // =========================================================================
+
+    /**
+     * Progressive library songs flow.
+     *
+     * Emits pages of songs as they arrive so the UI can display them
+     * immediately without waiting for the full library to load.
+     *
+     * Strategy:
+     * 1. Emit first 50 songs immediately (fast, ~1-2s)
+     * 2. In parallel, fetch next 50 songs and emit them
+     * 3. Continue until hasMore=false
+     *
+     * Each emission is cumulative (all songs seen so far).
+     */
+    fun getLibrarySongsFlow(pageSize: Int = 50): Flow<List<Song>> = flow {
+        val allSongs = mutableListOf<Song>()
+        
+        // Use InnerTube's native playlist fetcher on the "LM" (Liked Music) playlist
+        val initialResult = com.zionhuang.innertube.YouTube.playlist("LM")
+        val playlistPage = initialResult.getOrNull()
+        
+        if (playlistPage != null) {
+            val firstPageSongs = playlistPage.songs.mapNotNull {
+                if (it is com.zionhuang.innertube.models.SongItem) it.toDomainSong() else null
+            }
+            if (firstPageSongs.isNotEmpty()) {
+                allSongs.addAll(firstPageSongs)
+                emit(allSongs.toList())
+            }
+            
+            var currentContinuation = playlistPage.continuation
+            while (currentContinuation != null) {
+                val contResult = com.zionhuang.innertube.YouTube.playlistContinuation(currentContinuation)
+                val contPage = contResult.getOrNull() ?: break
+                
+                val contSongs = contPage.songs.mapNotNull {
+                    if (it is com.zionhuang.innertube.models.SongItem) it.toDomainSong() else null
+                }
+                
+                if (contSongs.isNotEmpty()) {
+                    allSongs.addAll(contSongs)
+                    emit(allSongs.toList())
+                }
+                
+                currentContinuation = contPage.continuation
+            }
+        }
+    }
+
+    suspend fun getUserPlaylists(): List<com.theveloper.pixelplay.data.model.Playlist> {
+        return withContext(Dispatchers.IO) {
+            try {
+                // Return cache immediately? Not exactly. Let's just fetch and save.
+                val result = com.zionhuang.innertube.YouTube.likedPlaylists()
+                val playlists = result.getOrNull() ?: emptyList()
+                
+                val domainPlaylists = playlists.mapNotNull { item ->
+                    val id = item.id.removePrefix("VL").takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                    val title = item.title ?: "Unknown"
+                    val thumbnailUrl = item.thumbnail
+                    val trackCount = item.songCountText?.filter { it.isDigit() }?.toIntOrNull() ?: 0
+
+                    ytMusicDao.insertPlaylist(
+                        com.theveloper.pixelplay.data.database.YTMusicPlaylistEntity(
+                            playlistId = id,
+                            title = title,
+                            thumbnailUrl = thumbnailUrl,
+                            trackCount = trackCount,
+                            cachedAt = System.currentTimeMillis(),
+                            lastSynced = System.currentTimeMillis()
+                        )
+                    )
+
+                    com.theveloper.pixelplay.data.model.Playlist(
+                        id = id,
+                        name = title,
+                        songIds = emptyList(),
+                        createdAt = System.currentTimeMillis(),
+                        source = "YTM",
+                        coverImageUri = thumbnailUrl,
+                        externalTrackCount = trackCount
+                    )
+                }
+
+                domainPlaylists
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to fetch YTM playlists: ${e.message}", e)
+                emptyList()
+            }
+        }
+    }
+
+    suspend fun createPlaylist(
+        title: String,
+        description: String = "",
+        videoIds: List<String> = emptyList()
+    ): String? {
+        return withContext(Dispatchers.IO) {
+            try {
+                YTMusicPythonService.keepAlive()
+
+                val result = webSocketClient.createPlaylist(title, description, "PRIVATE", videoIds)
+                result.onSuccess { playlistId ->
+                    return@withContext playlistId
+                }.onFailure { error ->
+                    Log.e(TAG, "Create playlist failed: ${error.message}", error)
+                }
+
+                null
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to create playlist: ${e.message}", e)
+                null
+            }
+        }
+    }
+
+    /**
+     * Add video to playlist on YouTube Music.
+     */
+    suspend fun addVideoToPlaylist(playlistId: String, videoId: String): Boolean {
+        return withContext(Dispatchers.IO) {
+            try {
+                YTMusicPythonService.keepAlive()
+
+                val result = webSocketClient.addToPlaylist(playlistId, listOf(videoId))
+                result.onSuccess { success ->
+                    return@withContext success
+                }.onFailure { error ->
+                    Log.e(TAG, "Add to playlist failed: ${error.message}", error)
+                }
+
+                false
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to add video to playlist: ${e.message}", e)
+                false
+            }
+        }
+    }
+
+    /**
+     * Fetch the tracks of a YouTube Music playlist, returned as Song objects
+     * ready for playback via the ytm:// URI scheme.
+     *
+     * Also updates the Room cache with the real track count so playlist cards
+     * show the correct song count immediately on subsequent app launches.
+     */
+    suspend fun getPlaylistTracks(playlistId: String): List<Song> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val result = com.zionhuang.innertube.YouTube.playlist(playlistId)
+                val playlistPage = result.getOrNull() ?: return@withContext emptyList()
+                return@withContext playlistPage.songs.mapNotNull {
+                    if (it is com.zionhuang.innertube.models.SongItem) it.toDomainSong() else null
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to get playlist tracks for $playlistId: ${e.message}", e)
+                emptyList()
+            }
+        }
+    }
+
+    suspend fun getRadioQueue(videoId: String, limit: Int = 25): List<Song> {
+        return withContext(Dispatchers.IO) {
+            try {
+                // To get radio/up-next queue natively, we use InnerTube's next API with a radio playlistId
+                val endpoint = com.zionhuang.innertube.models.WatchEndpoint(videoId = videoId, playlistId = "RDAMVM$videoId")
+                val result = com.zionhuang.innertube.YouTube.next(endpoint)
+                
+                val nextResult = result.getOrNull() ?: return@withContext emptyList()
+                return@withContext nextResult.items.mapNotNull { it.toDomainSong() }.take(limit)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to get radio queue for $videoId: ${e.message}", e)
+                emptyList()
+            }
+        }
+    }
+
+    // =========================================================================
+    // STREAMING — Python yt-dlp via WebSocket (replaces NewPipe Extractor)
+    // =========================================================================
+
+
+    /**
+     * Get stream URL for playback.
+     *
+     * Delegates to Python yt-dlp backend via WebSocket.
+     * yt-dlp is more reliable than NewPipe for stream extraction:
+     * - Handles YouTube's cipher obfuscation automatically
+     * - Actively maintained with frequent YouTube compatibility updates
+     * - Runs in the existing Chaquopy Python process (no extra Java dependency)
+     *
+     * Stream URLs are cached server-side for 5 hours.
+     */
+    suspend fun getPlayerRawStream(videoId: String): YTMPlayerResponse? {
+        return withContext(Dispatchers.IO) {
+            try {
+                val playerResponse = com.zionhuang.innertube.YouTube.player(videoId).getOrNull()
+                val formats = playerResponse?.streamingData?.adaptiveFormats ?: emptyList()
+                
+                // Try to find the highest bitrate audio format
+                val audioFormat = formats
+                    .filter { it.isAudio || it.mimeType.startsWith("audio/") }
+                    .maxByOrNull { it.bitrate }
+                    
+                val streamUrl = audioFormat?.url ?: formats.firstOrNull { it.url != null }?.url
+                
+                if (streamUrl != null) {
+                    return@withContext YTMPlayerResponse(
+                        videoDetails = VideoDetails(videoId = videoId),
+                        streamingData = StreamingData(
+                            adaptiveFormats = listOf(
+                                AdaptiveFormat(
+                                    url = streamUrl,
+                                    mimeType = audioFormat?.mimeType ?: "audio/webm",
+                                    bitrate = audioFormat?.bitrate ?: 128000
+                                )
+                            )
+                        )
+                    )
+                } else {
+                    return@withContext null
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to get player raw stream", e)
+                null
+            }
+        }
+", e)
+                null
+            }
+        }
+    }
+
+    suspend fun getPlayerAudioConfig(videoId: String): AudioConfig? {
+        return getPlayerRawStream(videoId)?.playerConfig?.audioConfig
+    }
+
+    // =========================================================================
+    // HOME FEED
+    // =========================================================================
+
+    /**
+     * Get personalized home feed.
+     */
+    suspend fun getHomeDiscoverFeed(): List<YTMAlbumShelf> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val result = com.zionhuang.innertube.YouTube.home()
+                val homePage = result.getOrNull()
+                
+                if (homePage != null) {
+                    val shelves = homePage.sections.map { section ->
+                        val title = section.title
+                        val browseId = section.endpoint?.browseId
+                        
+                        val songs = section.items.mapNotNull { item ->
+                            when (item) {
+                                is com.zionhuang.innertube.models.SongItem -> item.toDomainSong()
+                                else -> null
+                            }
+                        }
+                        
+                        YTMAlbumShelf(title, browseId, songs)
+                    }.filter { it.songs.isNotEmpty() }
+                    
+                    // Save to cache
+                    prefs.edit().putString("home_feed_cache", gson.toJson(shelves)).apply()
+                    return@withContext shelves
+                }
+
+                // Fallback to cache
+                val cached = prefs.getString("home_feed_cache", null)
+                if (cached != null) {
+                    val type = object : com.google.gson.reflect.TypeToken<List<YTMAlbumShelf>>() {}.type
+                    return@withContext gson.fromJson(cached, type)
+                }
+                emptyList()
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to get YTM home feed: ${e.message}", e)
+                val cached = prefs.getString("home_feed_cache", null)
+                if (cached != null) {
+                    val type = object : com.google.gson.reflect.TypeToken<List<YTMAlbumShelf>>() {}.type
+                    return@withContext gson.fromJson(cached, type)
+                }
+                emptyList()
+            }
+        }
+    }
+
+    suspend fun getCachedHomeDiscoverFeed(): List<YTMAlbumShelf>? {
+        return withContext(Dispatchers.IO) {
+            val cached = prefs.getString("home_feed_cache", null)
+            if (cached != null) {
+                val type = object : TypeToken<List<YTMAlbumShelf>>() {}.type
+                gson.fromJson(cached, type)
+            } else null
+        }
+    }
+    
+    suspend fun getRecentlyPlayed(): List<Song> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val result = com.zionhuang.innertube.YouTube.getHistory()
+                val items = result.getOrNull() ?: emptyList()
+                val songs = items.map { it.toDomainSong() }
+                Log.d(TAG, "YTM getHistory returned ${songs.size} items")
+                return@withContext songs
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to get history: ${e.message}", e)
+                emptyList()
+            }
+        }
+    }
+
+    suspend fun getCachedRecentlyPlayed(): List<Song>? {
+        return withContext(Dispatchers.IO) {
+            val cached = prefs.getString("recently_played_cache", null)
+            if (cached != null) {
+                val type = object : TypeToken<List<Song>>() {}.type
+                gson.fromJson(cached, type)
+            } else null
+        }
+    }
+    // =========================================================================
+    // ARTIST PROFILE
+    // =========================================================================
+
+    /**
+     * Get artist profile details.
+     */
+    suspend fun getArtistProfile(channelId: String): YTMArtistProfile? {
+        return withContext(Dispatchers.IO) {
+            try {
+                val result = com.zionhuang.innertube.YouTube.artist(channelId)
+                val artistPage = result.getOrNull() ?: return@withContext null
+                
+                YTMArtistProfile(
+                    channelId = channelId,
+                    name = artistPage.artist.title,
+                    bio = artistPage.description,
+                    monthlyListeners = "",
+                    thumbnailUrl = artistPage.artist.thumbnail,
+                    albums = emptyList(),
+                    topSongs = emptyList()
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "Get artist failed: ${e.message}", e)
+                null
+            }
+        }
+", e)
+                null
+            }
+        }
+    }
+}
+
+private fun com.zionhuang.innertube.models.SongItem.toDomainSong(): Song {
+    val primaryArtistId = this.artists.firstOrNull()?.id?.hashCode()?.toLong() ?: -1L
+    return Song(
+        id = this.id,
+        title = this.title,
+        artist = this.artists.firstOrNull()?.name ?: "Unknown",
+        artistId = primaryArtistId,
+        artists = this.artists.map { it ->
+            com.theveloper.pixelplay.data.model.ArtistRef(
+                id = it.id?.hashCode()?.toLong() ?: -1L,
+                name = it.name,
+                isPrimary = true
+            )

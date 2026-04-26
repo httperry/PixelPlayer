@@ -44,11 +44,13 @@ class YTMSessionRepository @Inject constructor(
     override fun getCookies(): String? {
         // Synchronous read using runBlocking is intentional here — OkHttp interceptors
         // run on background threads so it's safe, and we need a non-suspend return.
-        return kotlinx.coroutines.runBlocking {
+        val cookies = kotlinx.coroutines.runBlocking {
             context.ytmDataStore.data
                 .map { it[KEY_COOKIE_STRING] }
                 .firstOrNull()
         }
+        com.zionhuang.innertube.YouTube.cookie = cookies
+        return cookies
     }
 
     override fun getSapisidHash(): String? {
@@ -87,6 +89,7 @@ class YTMSessionRepository @Inject constructor(
             prefs[KEY_AUTH_USER] = authUser
             if (sapisid != null) prefs[KEY_SAPISID] = sapisid
         }
+        com.zionhuang.innertube.YouTube.cookie = cookieString
         Log.d(TAG, "YTM auth headers saved (authUser=$authUser, hasSapisid=${sapisid != null})")
     }
 
@@ -133,12 +136,14 @@ class YTMSessionRepository @Inject constructor(
             if (sapisid != null) prefs[KEY_SAPISID] = sapisid
             if (email != null) prefs[KEY_LOGIN_EMAIL] = email
         }
+        com.zionhuang.innertube.YouTube.cookie = rawCookieString
         Log.d(TAG, "YTM session saved (email=$email, hasSapisid=${sapisid != null})")
     }
 
     /** Clears all stored session data — equivalent of logging out. */
     suspend fun clearSession() {
         context.ytmDataStore.edit { it.clear() }
+        com.zionhuang.innertube.YouTube.cookie = null
         Log.d(TAG, "YTM session cleared")
     }
 

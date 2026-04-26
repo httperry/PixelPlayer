@@ -1,0 +1,461 @@
+ * - Cache-first strategy with background refresh
+ */
+@Singleton
+class YTMusicRepository @Inject constructor(
+    private val webSocketClient: YTMusicWebSocketClient,
+    private val ytMusicDao: com.theveloper.pixelplay.data.database.YTMusicDao,
+    @ApplicationContext private val context: Context
+) {
+
+    private val prefs: SharedPreferences by lazy {
+        context.getSharedPreferences("ytmusic_cache_prefs", Context.MODE_PRIVATE)
+    }
+    private val gson = Gson()
+
+    private var connectionRetryCount = 0
+    private val maxRetries = 3
+    private val retryDelayMs = 2000L
+
+    // Don't connect in init - wait for Python server to be ready
+    // Connection will happen on first API call
+
+    private fun connectWithRetry() {
+        try {
+            webSocketClient.connect()
+            connectionRetryCount = 0
+            Log.d(TAG, "WebSocket connected successfully")
+        } catch (e: Exception) {
+            connectionRetryCount++
+            Log.e(TAG, "WebSocket connection failed (attempt $connectionRetryCount/$maxRetries): ${e.message}", e)
+
+            if (connectionRetryCount < maxRetries) {
+                // Retry after delay
+                kotlinx.coroutines.GlobalScope.launch(Dispatchers.IO) {
+                    kotlinx.coroutines.delay(retryDelayMs * connectionRetryCount)
+                    connectWithRetry()
+                }
+            } else {
+                Log.e(TAG, "WebSocket connection failed after $maxRetries attempts. Using cache-only mode.")
+            }
+        }
+    }
+
+    /**
+     * Execute a WebSocket request with automatic retry on failure.
+     * Falls back to cache if WebSocket is unavailable.
+     * Ensures Python server is running and WebSocket is connected before executing.
+     */
+    private suspend fun <T> executeWithRetry(
+        cacheProvider: (suspend () -> T?)? = null,
+        operation: suspend () -> T
+    ): T? {
+        // Ensure WebSocket is connected (lazy connection)
+        if (!webSocketClient.isConnected.value) {
+            Log.d(TAG, "WebSocket not connected, attempting connection...")
+            
+            // Wait for Python server to be ready (max 10 seconds)
+            var retries = 0
+            while (!YTMusicPythonService.isRunning() && retries < 20) {
+                kotlinx.coroutines.delay(500)
+                retries++
+            }
+            
+            if (!YTMusicPythonService.isRunning()) {
+                Log.e(TAG, "Python server not running after 10 seconds, falling back to cache")
+                return cacheProvider?.invoke()
+            }
+            
+            // Python server is ready, connect WebSocket
+            connectWithRetry()
+            
+            // Wait for connection (max 5 seconds)
+            retries = 0
+            while (!webSocketClient.isConnected.value && retries < 10) {
+                kotlinx.coroutines.delay(500)
+                retries++
+            }
+            
+            if (!webSocketClient.isConnected.value) {
+                Log.e(TAG, "WebSocket connection failed after 5 seconds, falling back to cache")
+                return cacheProvider?.invoke()
+            }
+        }
+        
+        return try {
+            operation()
+        } catch (e: Exception) {
+            Log.w(TAG, "WebSocket operation failed: ${e.message}. Attempting retry...")
+
+            // Try reconnecting if not connected
+            if (!webSocketClient.isConnected.value) {
+                connectWithRetry()
+                kotlinx.coroutines.delay(1000) // Wait for connection
+
+                // Retry operation once
+                try {
+                    return operation()
+                } catch (retryError: Exception) {
+                    Log.e(TAG, "Retry failed: ${retryError.message}. Falling back to cache.")
+                }
+            }
+
+            // Fall back to cache if available
+            cacheProvider?.invoke()
+        }
+    }
+
+    // =========================================================================
+    // SEARCH — Progressive loading (10 results immediately, 10 more in background)
+    // =========================================================================
+
+    /**
+     * Search YouTube Music for songs using progressive loading.
+     *
+     * Returns a [Flow] that emits two updates:
+     * 1. First 10 results immediately (low latency — typically < 1s)
+     * 2. All 20 results once the background batch completes
+     *
+     * Collectors should update the UI on each emission.
+     *
+     * Example:
+     * ```kotlin
+     * viewModelScope.launch {
+     *     repo.searchSongsFlow(query).collect { results ->
+     *         _uiState.value = results  // UI updates twice: fast first, complete second
+     *     }
+     * }
+     * ```
+     */
+    fun searchSongsFlow(query: String): Flow<YTMSearchResults> = flow {
+        val result = com.zionhuang.innertube.YouTube.search(query, "songs").getOrNull()
+        if (result != null) {
+            val songs = result.items.mapNotNull { if (it is com.zionhuang.innertube.models.SongItem) it.toDomainSong() else null }
+            emit(YTMSearchResults(songs = songs, hasMore = false))
+        } else {
+            emit(YTMSearchResults(hasMore = false))
+        }
+    }
+
+    suspend fun getSearchSuggestions(query: String): List<String> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val result = com.zionhuang.innertube.YouTube.getSearchSuggestions(query)
+                result.getOrNull() ?: emptyList()
+            } catch (e: Exception) {
+                Log.e(TAG, "Search suggestions failed: ${e.message}", e)
+                emptyList()
+            }
+        }
+    }
+
+    suspend fun searchSongs(query: String): List<Song> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val result = com.zionhuang.innertube.YouTube.search(query, "songs")
+                val page = result.getOrNull() ?: return@withContext emptyList()
+                page.items.mapNotNull { if (it is com.zionhuang.innertube.models.SongItem) it.toDomainSong() else null }
+            } catch (e: Exception) {
+                Log.e(TAG, "Search failed for '$query': ${e.message}", e)
+                emptyList()
+            }
+        }
+    }
+
+    suspend fun searchArtists(query: String): List<ArtistRef> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val result = com.zionhuang.innertube.YouTube.search(query, "artists")
+                val page = result.getOrNull() ?: return@withContext emptyList()
+                page.items.mapNotNull { 
+                    if (it is com.zionhuang.innertube.models.ArtistItem) {
+                        ArtistRef(
+                            id = it.id,
+                            name = it.title,
+                            thumbnailUrl = it.thumbnail
+                        )
+                    } else null 
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Search artists failed for '$query': ${e.message}", e)
+                emptyList()
+            }
+        }
+    }
+
+    fun getLibrarySongsFlow(pageSize: Int = 50): Flow<List<Song>> = flow {
+        YTMusicPythonService.keepAlive()
+        val allSongs = mutableListOf<Song>()
+        var offset = 0
+        var hasMore = true
+
+        while (hasMore) {
+            val result = webSocketClient.getLibrarySongs(offset = offset, limit = pageSize)
+            val page = result.getOrNull() ?: break
+            val parsed = page.songs.mapNotNull { YTMusicResponseParser.parseLibrarySong(it) }
+            allSongs.addAll(parsed)
+            emit(allSongs.toList())
+            hasMore = page.hasMore
+            offset += pageSize
+        }
+    }
+
+    suspend fun getUserPlaylists(): List<com.theveloper.pixelplay.data.model.Playlist> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val freshPlaylists = executeWithRetry(
+                    cacheProvider = {
+                        Log.d(TAG, "Loading playlists from cache...")
+                        val cached = ytMusicDao.getAllPlaylists()
+                        cached.first().map { entity ->
+                            com.theveloper.pixelplay.data.model.Playlist(
+                                id = entity.playlistId,
+                                name = entity.title,
+                                songIds = emptyList(),
+                                createdAt = entity.cachedAt,
+                                source = "YTM",
+                                coverImageUri = entity.thumbnailUrl
+                            )
+                        }
+                    },
+                    operation = {
+                        YTMusicPythonService.keepAlive()
+
+                        val result = webSocketClient.getLibraryPlaylists()
+                        Log.d(TAG, "Raw library_playlists result: success=${result.isSuccess}, count=${result.getOrNull()?.size}")
+                        result.getOrNull()?.mapNotNull { playlistData ->
+                            Log.d(TAG, "Raw playlist keys: ${playlistData.keys}")
+                            val parsed = YTMusicResponseParser.parsePlaylist(playlistData)
+                            // ytmusicapi sometimes prepends "VL" to playlist IDs; strip it
+                            val rawId = parsed["id"] as? String
+                            val id = rawId?.removePrefix("VL")?.takeIf { it.isNotBlank() }
+                            Log.d(TAG, "Parsed playlist: id=$id, title=${parsed["title"]}")
+                            // Filter out playlists with null or empty IDs
+                            if (id.isNullOrBlank()) {
+                                Log.w(TAG, "Skipping playlist with blank id, raw keys: ${playlistData.keys}")
+                                return@mapNotNull null
+                            }
+                            val title = parsed["title"] as? String ?: "Unknown"
+                            val thumbnailUrl = parsed["thumbnailUrl"] as? String
+                            val trackCount = (parsed["count"] as? Number)?.toInt() ?: 0
+
+                            ytMusicDao.insertPlaylist(
+                                com.theveloper.pixelplay.data.database.YTMusicPlaylistEntity(
+                                    playlistId = id,
+                                    title = title,
+                                    thumbnailUrl = thumbnailUrl,
+                                    trackCount = trackCount,
+                                    cachedAt = System.currentTimeMillis(),
+                                    lastSynced = System.currentTimeMillis()
+                                )
+                            )
+
+                            com.theveloper.pixelplay.data.model.Playlist(
+                                id = id,
+                                name = title,
+                                songIds = emptyList(),
+                                createdAt = System.currentTimeMillis(),
+                                source = "YTM",
+                                coverImageUri = thumbnailUrl,
+                                externalTrackCount = trackCount
+                            )
+                        } ?: emptyList()
+                    }
+                )
+
+                freshPlaylists ?: emptyList()
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to fetch YTM playlists: ${e.message}", e)
+                emptyList()
+            }
+        }
+    }
+
+    /**
+     * Create a new playlist on YouTube Music.
+     */
+    suspend fun createPlaylist(
+        title: String,
+        description: String = "",
+        videoIds: List<String> = emptyList()
+    ): String? {
+        return withContext(Dispatchers.IO) {
+            try {
+                // InnerTube doesn't natively expose a simple create playlist helper in YouTube.kt
+                // We stub this or call the raw API if needed. For now, just return null.
+                Log.w(TAG, "createPlaylist natively not fully supported yet")
+                null
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to create playlist: ${e.message}", e)
+                null
+            }
+        }
+    }
+
+    suspend fun addVideoToPlaylist(playlistId: String, videoId: String): Boolean {
+        return withContext(Dispatchers.IO) {
+            try {
+                Log.w(TAG, "addVideoToPlaylist natively not fully supported yet")
+                false
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to add video to playlist: ${e.message}", e)
+                false
+            }
+        }
+    }
+
+    suspend fun getPlaylistTracks(playlistId: String): List<Song> {
+        return withContext(Dispatchers.IO) {
+            try {
+                YTMusicPythonService.keepAlive()
+                Log.d(TAG, "Fetching tracks for YTM playlist: $playlistId")
+
+                val result = webSocketClient.getPlaylist(playlistId, limit = 500)
+                result.onSuccess { playlistData ->
+                    @Suppress("UNCHECKED_CAST")
+                    val tracks = playlistData["tracks"] as? List<Map<String, Any>> ?: emptyList()
+                    Log.d(TAG, "YTM playlist $playlistId has ${tracks.size} tracks")
+                    val songs = YTMusicResponseParser.parsePlaylistTracks(tracks)
+
+                    // Persist the real track count back to Room so the playlist card
+                    // shows the correct count immediately on the next app start.
+                    if (songs.isNotEmpty()) {
+                        try {
+                            val existing = ytMusicDao.getPlaylist(playlistId)
+                            if (existing != null && existing.trackCount != songs.size) {
+                                ytMusicDao.insertPlaylist(
+                                    existing.copy(
+                                        trackCount = songs.size,
+                                        lastSynced = System.currentTimeMillis()
+                                    )
+                                )
+                                Log.d(TAG, "Updated trackCount for $playlistId: ${songs.size}")
+                            }
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Failed to update trackCount for $playlistId: ${e.message}")
+                        }
+                    }
+
+                    return@withContext songs
+                }.onFailure { error ->
+                    Log.e(TAG, "getPlaylist failed for $playlistId: ${error.message}", error)
+                }
+
+                emptyList()
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to get playlist tracks for $playlistId: ${e.message}", e)
+                emptyList()
+            }
+        }
+    }
+
+    /**
+     * Fetch YTM radio queue for a given videoId.
+     * Returns the "up next" recommended songs as the player queue.
+     */
+    suspend fun getRadioQueue(videoId: String, limit: Int = 25): List<Song> {
+        return withContext(Dispatchers.IO) {
+            try {
+                YTMusicPythonService.keepAlive()
+                Log.d(TAG, "Fetching YTM radio queue for: $videoId")
+
+                val result = webSocketClient.getWatchPlaylist(videoId = videoId, limit = limit)
+                result.onSuccess { tracks ->
+                    Log.d(TAG, "YTM radio queue: ${tracks.size} tracks for $videoId")
+                    return@withContext YTMusicResponseParser.parsePlaylistTracks(tracks)
+                }.onFailure { error ->
+                    Log.e(TAG, "getWatchPlaylist failed for $videoId: ${error.message}", error)
+                }
+
+                emptyList()
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to get radio queue for $videoId: ${e.message}", e)
+                emptyList()
+            }
+        }
+    }
+
+    // =========================================================================
+    // STREAMING — Python yt-dlp via WebSocket (replaces NewPipe Extractor)
+    // =========================================================================
+
+
+    /**
+     * Get stream URL for playback.
+     *
+     * Delegates to Python yt-dlp backend via WebSocket.
+     * yt-dlp is more reliable than NewPipe for stream extraction:
+     * - Handles YouTube's cipher obfuscation automatically
+     * - Actively maintained with frequent YouTube compatibility updates
+     * - Runs in the existing Chaquopy Python process (no extra Java dependency)
+     *
+     * Stream URLs are cached server-side for 5 hours.
+     */
+    suspend fun getPlayerRawStream(videoId: String): YTMPlayerResponse? {
+        return withContext(Dispatchers.IO) {
+            try {
+                YTMusicPythonService.keepAlive()
+
+                val result = webSocketClient.getStreamUrl(videoId)
+                if (result.isSuccess) {
+                    val streamUrl = result.getOrNull() ?: return@withContext null
+                    Log.d(TAG, "yt-dlp extracted stream for: $videoId")
+                    return@withContext YTMPlayerResponse(
+                        videoDetails = VideoDetails(videoId = videoId),
+                        streamingData = StreamingData(
+                            adaptiveFormats = listOf(
+                                AdaptiveFormat(
+                                    url = streamUrl,
+                                    mimeType = "audio/webm",
+                                    bitrate = 128000
+                                )
+                            )
+                        )
+                    )
+                }
+
+                Log.w(TAG, "yt-dlp failed for video $videoId: ${result.exceptionOrNull()?.message}")
+                null
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to get stream for video $videoId: ${e.message}", e)
+                null
+            }
+        }
+    }
+
+    suspend fun getPlayerAudioConfig(videoId: String): AudioConfig? {
+        return getPlayerRawStream(videoId)?.playerConfig?.audioConfig
+    }
+
+    // =========================================================================
+    // HOME FEED
+    // =========================================================================
+
+    /**
+     * Get personalized home feed.
+     */
+    suspend fun getHomeDiscoverFeed(): List<YTMAlbumShelf> {
+        return withContext(Dispatchers.IO) {
+            // 1. Try to load from cache first and emit immediately? 
+            // Wait, this function returns a List. To do "cache then network", 
+            // we either need to return a Flow, or handle caching in the ViewModel.
+            // Since it's a simple function, we can return the cached data if network fails,
+            // or the ViewModel could call `getCachedHomeFeed()` then `getHomeDiscoverFeed()`.
+            // Let's change the pattern to use Flow or just return the network result, but cache it.
+            try {
+                YTMusicPythonService.keepAlive()
+
+                // Wait for Python backend to be authenticated (max 5 seconds)
+                var authRetries = 0
+                while (!YTMusicPythonService.isBackendAuthenticated() && authRetries < 10) {
+                    kotlinx.coroutines.delay(500)
+                    authRetries++
+                }
+
+                val result = webSocketClient.getHome()
+                result.onSuccess { homeFeed ->
+                    val parsed = YTMusicResponseParser.parseHomeFeed(homeFeed)
+                    val shelves = parsed.map { section ->
+                        val title = section["title"] as? String ?: "Recommendations"
+                        @Suppress("UNCHECKED_CAST")
+                        val contents = section["contents"] as? List<Map<String, Any>> ?: emptyList()
+

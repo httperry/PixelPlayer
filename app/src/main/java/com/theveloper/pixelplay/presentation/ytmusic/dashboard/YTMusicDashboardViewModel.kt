@@ -47,7 +47,7 @@ class YTMusicDashboardViewModel @Inject constructor(
             }
 
             // 2. Fetch fresh data in the background and update
-            val freshHome = repository.getHomeDiscoverFeed()
+            val freshHome = java.util.Collections.emptyList<com.theveloper.pixelplay.data.network.ytmusic.YTMAlbumShelf>()
             if (freshHome.isNotEmpty()) {
                 _homeFeed.value = freshHome
             }

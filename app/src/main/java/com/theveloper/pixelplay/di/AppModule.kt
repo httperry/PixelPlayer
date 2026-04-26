@@ -516,26 +516,15 @@ object AppModule {
             .build()
     }
 
-    @Provides
-    @Singleton
-    fun provideYTMusicWebSocketClient(
-        sessionRepository: com.theveloper.pixelplay.data.network.ytmusic.YTMSessionRepository
-    ): com.theveloper.pixelplay.data.network.ytmusic.YTMusicWebSocketClient {
-        return com.theveloper.pixelplay.data.network.ytmusic.YTMusicWebSocketClient(sessionRepository)
-    }
-
-    // NewPipeYTMusicExtractor removed — stream URL resolution now handled by
     // yt-dlp in the Python backend. No separate provider needed.
     
     @Provides
     @Singleton
     fun provideYTMusicStreamProxy(
-        webSocketClient: com.theveloper.pixelplay.data.network.ytmusic.YTMusicWebSocketClient,
         okHttpClient: OkHttpClient,
         @dagger.hilt.android.qualifiers.ApplicationContext context: android.content.Context
     ): com.theveloper.pixelplay.data.network.ytmusic.YTMusicStreamProxy {
         return com.theveloper.pixelplay.data.network.ytmusic.YTMusicStreamProxy(
-            webSocketClient = webSocketClient,
             okHttpClient = okHttpClient,
             context = context
         )
@@ -544,12 +533,13 @@ object AppModule {
     @Provides
     @Singleton
     fun provideYTMusicRepository(
-        webSocketClient: com.theveloper.pixelplay.data.network.ytmusic.YTMusicWebSocketClient,
+        sessionRepository: com.theveloper.pixelplay.data.network.ytmusic.YTMSessionRepository,
         ytMusicDao: com.theveloper.pixelplay.data.database.YTMusicDao,
         @dagger.hilt.android.qualifiers.ApplicationContext context: android.content.Context
     ): com.theveloper.pixelplay.data.network.ytmusic.YTMusicRepository {
+        // Initialize InnerTube cookie
+        sessionRepository.getCookies()
         return com.theveloper.pixelplay.data.network.ytmusic.YTMusicRepository(
-            webSocketClient = webSocketClient,
             ytMusicDao = ytMusicDao,
             context = context
         )
