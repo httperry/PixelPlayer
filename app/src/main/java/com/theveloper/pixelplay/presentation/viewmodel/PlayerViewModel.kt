@@ -680,7 +680,7 @@ class PlayerViewModel @Inject constructor(
 
     private val _albumNavigationRequests = MutableSharedFlow<Long>(extraBufferCapacity = 1)
     val albumNavigationRequests = _albumNavigationRequests.asSharedFlow()
-    private val _artistNavigationRequests = MutableSharedFlow<Long>(extraBufferCapacity = 1)
+    private val _artistNavigationRequests = MutableSharedFlow<Pair<Long, String>>(extraBufferCapacity = 1)
     val artistNavigationRequests = _artistNavigationRequests.asSharedFlow()
     private val _searchNavDoubleTapEvents = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val searchNavDoubleTapEvents = _searchNavDoubleTapEvents.asSharedFlow()
@@ -2421,7 +2421,7 @@ class PlayerViewModel @Inject constructor(
                 awaitPlayerCollapse()
             }
 
-            _artistNavigationRequests.emit(artistId)
+            _artistNavigationRequests.emit(artistId to (currentSong?.artist ?: ""))
         }
     }
 

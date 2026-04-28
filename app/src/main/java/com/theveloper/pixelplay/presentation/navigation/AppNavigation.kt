@@ -407,13 +407,17 @@ fun AppNavigation(
             }
             composable(
                 route = Screen.ArtistDetail.route,
-                arguments = listOf(navArgument("artistId") { type = NavType.StringType }),
+                arguments = listOf(
+                    navArgument("artistId") { type = NavType.StringType },
+                    navArgument("artistName") { type = NavType.StringType; nullable = true }
+                ),
                 enterTransition = { enterTransition() },
                 exitTransition = { exitTransition() },
                 popEnterTransition = { popEnterTransition() },
                 popExitTransition = { popExitTransition() },
             ) { backStackEntry ->
                 val artistId = backStackEntry.arguments?.getString("artistId")
+                // artistName is passed down, but ArtistDetailScreen already pulls it from SavedStateHandle via ViewModel
                 if (artistId != null) {
                     ScreenWrapper(navController = navController, playerViewModel = playerViewModel) {
                         ArtistDetailScreen(

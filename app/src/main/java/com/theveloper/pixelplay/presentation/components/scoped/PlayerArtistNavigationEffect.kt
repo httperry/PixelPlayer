@@ -20,11 +20,11 @@ internal fun PlayerArtistNavigationEffect(
 ) {
     val latestSheetCollapsedTargetY by rememberUpdatedState(sheetCollapsedTargetY)
     LaunchedEffect(navController) {
-        playerViewModel.artistNavigationRequests.collectLatest { artistId ->
+        playerViewModel.artistNavigationRequests.collectLatest { (artistId, artistName) ->
             sheetMotionController.snapCollapsed(latestSheetCollapsedTargetY)
             playerViewModel.collapsePlayerSheet()
 
-            navController.navigateSafely(Screen.ArtistDetail.createRoute(artistId)) {
+            navController.navigateSafely(Screen.ArtistDetail.createRoute(artistId, artistName)) {
                 // Allow navigating from one artist detail to another by replacing
                 // the current instance instead of blocking with launchSingleTop.
                 launchSingleTop = false

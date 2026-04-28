@@ -22,6 +22,12 @@ import dagger.hilt.android.HiltAndroidApp
 import timber.log.Timber
 import javax.inject.Inject
 
+import com.zionhuang.innertube.YouTube
+import com.theveloper.pixelplay.data.network.ytmusic.WebViewJsEvaluator
+import android.os.Handler
+import android.os.Looper
+import android.widget.Toast
+
 @HiltAndroidApp
 class PixelPlayApplication : Application(), ImageLoaderFactory, Configuration.Provider {
 
@@ -93,6 +99,19 @@ class PixelPlayApplication : Application(), ImageLoaderFactory, Configuration.Pr
         }
 
         ProcessLifecycleOwner.get().lifecycle.addObserver(appLifecycleObserver)
+
+        // Pre-initialize V8 evaluator and attach error callbacks
+        YouTube.jsEvaluator = WebViewJsEvaluator(this)
+        var hasShownObfuscationError = false
+        YouTube.onObfuscationFailure = {
+            if (!hasShownObfuscationError) {
+                hasShownObfuscationError = true
+                Handler(Looper.getMainLooper()).post {
+                    Toast.makeText(this, "YouTube obfuscation changed. Falling back to native client.", Toast.LENGTH_LONG).show()
+                    Timber.e("YTM Obfuscation Changed - Please update algorithm")
+                }
+            }
+        }
     }
 
     override fun newImageLoader(): ImageLoader {

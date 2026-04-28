@@ -493,7 +493,7 @@ fun GenreDetailScreen(
                             showSongOptionsSheet = null
                         },
                         onNavigateToArtist = {
-                            com.theveloper.pixelplay.presentation.navigation.Screen.ArtistDetail.createRoute(song.artistId).let { route ->
+                            com.theveloper.pixelplay.presentation.navigation.Screen.ArtistDetail.createRoute(song.artistId, song.artist).let { route ->
                                 navController.navigateSafely(route)
                             }
                             showSongOptionsSheet = null

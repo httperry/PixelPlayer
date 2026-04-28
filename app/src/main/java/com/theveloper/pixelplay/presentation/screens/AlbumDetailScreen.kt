@@ -418,7 +418,7 @@ fun AlbumDetailScreen(
                         showSongInfoBottomSheet = false
                     },
                     onNavigateToArtist = {
-                        navController.navigateSafely(Screen.ArtistDetail.createRoute(currentSong.artistId))
+                        navController.navigateSafely(Screen.ArtistDetail.createRoute(currentSong.artistId, currentSong.artist))
                         showSongInfoBottomSheet = false
                     },
                     onNavigateToGenre = {

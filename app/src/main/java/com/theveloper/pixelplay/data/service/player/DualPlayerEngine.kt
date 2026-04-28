@@ -343,10 +343,16 @@ class DualPlayerEngine @Inject constructor(
                     
                     Timber.tag("DualPlayerEngine").w("resolveDataSpec: cache MISS for %s — blocking to resolve", originalUri)
                     val blockingResolved = kotlinx.coroutines.runBlocking {
-                        runCatching { resolveCloudUri(uri) }.getOrNull()
+                        runCatching { resolveCloudUri(uri) }.onFailure {
+                            Timber.tag("DualPlayerEngine").e(it, "resolveCloudUri failed for $originalUri")
+                        }.getOrNull()
                     }
                     if (blockingResolved != null && blockingResolved != uri) {
                         return dataSpec.buildUpon().setUri(blockingResolved).build()
+                    } else {
+                        // Prevent ExoPlayer's DefaultHttpDataSource from crashing with MalformedURLException
+                        // by forcing a sensible stream/source error when resolution fails.
+                        throw java.io.IOException("Failed to resolve cloud URI: $originalUri")
                     }
                 }
                 return dataSpec
@@ -647,26 +653,37 @@ class DualPlayerEngine @Inject constructor(
 
     private suspend fun resolveYtmUriAsync(uriString: String): Uri? {
         Timber.tag("DualPlayerEngine").d("Async resolving YTM URI: $uriString")
-        // uri format usually ytm://videoId
         val videoId = uriString.removePrefix("ytm://")
-        return try {
+        val proxyUriString = "ytmusic://$videoId"
+        
+        val proxyReady = ytMusicStreamProxy.ensureReady(5_000L)
+        if (!proxyReady) {
+            Timber.tag("DualPlayerEngine").e("YTMusicStreamProxy not ready after timeout")
+            return null
+        }
+
+        // Try getting loudness from ytMusicRepository just for normalization cache
+        runCatching {
             val response = ytMusicRepository.getPlayerRawStream(videoId)
-            val audioUrl = response?.streamingData?.adaptiveFormats
-                ?.filter { it.mimeType.contains("audio/mp4") || it.mimeType.contains("audio/webm") }
-                ?.maxByOrNull { it.bitrate }?.url
-            
             val loudness = response?.playerConfig?.audioConfig?.loudnessDb
             if (loudness != null) {
                 cachedYtmLoudnessMap[uriString] = loudness
             }
-
-            if (!audioUrl.isNullOrBlank()) {
-                Uri.parse(audioUrl)
-            } else null
-        } catch (e: Exception) {
-            Timber.tag("DualPlayerEngine").e(e, "Failed to resolve YTM URI")
-            null
         }
+        
+        val warmUpSuccess = ytMusicStreamProxy.warmUpStreamUrl(proxyUriString)
+        if (!warmUpSuccess) {
+            Timber.tag("DualPlayerEngine").e("Failed to warm up proxy stream URL for: $proxyUriString")
+            return null
+        }
+
+        val proxyUrl = ytMusicStreamProxy.resolveYTMusicUri(proxyUriString)
+        if (!proxyUrl.isNullOrBlank()) {
+            return Uri.parse(proxyUrl)
+        }
+
+        Timber.tag("DualPlayerEngine").w("Failed to resolve YTM URI: $uriString")
+        return null
     }
 
     /**
@@ -682,7 +699,7 @@ class DualPlayerEngine @Inject constructor(
         if (resolvedUri == uri) return mediaItem // Resolution failed or not needed
 
         // Inject YTM Loudness if we resolved it
-        val builder = mediaItem.buildUpon().setUri(resolvedUri)
+        val builder = mediaItem.buildUpon()
         val uriString = uri.toString()
         if (scheme == "ytm" && cachedYtmLoudnessMap.containsKey(uriString)) {
             val currentExtras = mediaItem.mediaMetadata.extras ?: android.os.Bundle()

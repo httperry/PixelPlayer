@@ -277,6 +277,7 @@ class YTMusicRepository @Inject constructor(
                     val page = result.getOrNull() ?: return@withContext emptyList()
                     page.songs.map { it.toDomainSong() }
                 } catch (e: Exception) {
+                    android.util.Log.e("YTMusicRepository", "Failed to fetch playlist tracks: $playlistId", e)
                     emptyList()
                 }
             }
@@ -385,14 +386,36 @@ class YTMusicRepository @Inject constructor(
                 try {
                     val result = com.zionhuang.innertube.YouTube.artist(channelId)
                     val artistPage = result.getOrNull() ?: return@withContext null
+                    
+                    val songs = mutableListOf<com.theveloper.pixelplay.data.model.Song>()
+                    val albums = mutableListOf<YTMAlbumShelf>()
+                    
+                    artistPage.sections.forEach { section ->
+                        section.items.forEach { item ->
+                            when (item) {
+                                is com.zionhuang.innertube.models.SongItem -> songs.add(item.toDomainSong())
+                                is com.zionhuang.innertube.models.AlbumItem -> {
+                                    albums.add(
+                                        YTMAlbumShelf(
+                                            title = item.title,
+                                            browseId = item.browseId,
+                                            songs = emptyList() // The artist page usually doesn't have the songs of the album directly, they have to be fetched
+                                        )
+                                    )
+                                }
+                                else -> {}
+                            }
+                        }
+                    }
+
                     YTMArtistProfile(
                         channelId = channelId,
                         name = artistPage.artist.title,
                         bio = artistPage.description,
                         monthlyListeners = "",
                         thumbnailUrl = artistPage.artist.thumbnail,
-                        albums = emptyList(),
-                        topSongs = emptyList()
+                        albums = albums,
+                        topSongs = songs
                     )
                 } catch (e: Exception) { null }
             }

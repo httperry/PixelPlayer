@@ -57,7 +57,7 @@ class ArtistDetailViewModel @Inject constructor(
     private val artistImageRepository: ArtistImageRepository,
     private val ytMusicRepository: YTMusicRepository,
     val themeStateHolder: ThemeStateHolder,
-    savedStateHandle: SavedStateHandle
+    val savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ArtistDetailUiState())
@@ -111,6 +111,12 @@ class ArtistDetailViewModel @Inject constructor(
                     }
                     .collect { (artist, songs) ->
                         if (artist == null) {
+                            // Try to retrieve from YouTube Music as fallback
+                            val artistName = savedStateHandle.get<String>("artistName")
+                            if (!artistName.isNullOrBlank()) {
+                                fetchYTMArtistFallback(id, artistName, songs)
+                                return@collect
+                            }
                             _uiState.update {
                                 it.copy(error = context.getString(R.string.could_not_find_artist), isLoading = false)
                             }
@@ -160,18 +166,8 @@ class ArtistDetailViewModel @Inject constructor(
                         viewModelScope.launch {
                             try {
                                 val ytmArtists = ytMusicRepository.searchArtists(artist.name)
-                                // Extract the browseId from the first search result
-                                // The searchArtists returns Artist objects where the imageUrl contains the browse endpoint
                                 val firstArtist = ytmArtists.firstOrNull()
                                 if (firstArtist != null) {
-                                    // The artist ID from YTM search is a hash of the browseId
-                                    // We need to construct the actual channel ID (browseId)
-                                    // For now, we'll try to use a simple approach: search for the channel ID pattern
-                                    // in the artist's data or construct it from the ID
-                                    
-                                    // Since we don't have direct access to browseId in the Artist model,
-                                    // we'll skip the YTM profile fetch for now
-                                    // TODO: Enhance Artist model to include browseId from YTM search results
                                     Log.d("ArtistDebug", "Found YTM artist: ${firstArtist.name}, but browseId not available in model")
                                 }
                             } catch (e: Exception) {
@@ -186,6 +182,84 @@ class ArtistDetailViewModel @Inject constructor(
                         error = context.getString(R.string.error_loading_artist, e.localizedMessage ?: ""),
                         isLoading = false
                     )
+                }
+            }
+        }
+    }
+
+    private fun fetchYTMArtistFallback(id: Long, artistName: String, localSongs: List<Song>) {
+        viewModelScope.launch {
+            try {
+                // 1. Search for the artist to get the raw YTM item (which has the channel ID)
+                val searchResult = com.zionhuang.innertube.YouTube.search(artistName, com.zionhuang.innertube.YouTube.SearchFilter.FILTER_ARTIST).getOrNull()
+                val ytmItem = searchResult?.items?.firstOrNull() as? com.zionhuang.innertube.models.ArtistItem
+                if (ytmItem?.id == null) {
+                    _uiState.update { it.copy(error = context.getString(R.string.could_not_find_artist), isLoading = false) }
+                    return@launch
+                }
+
+                // 2. Fetch the artist profile using the real channel ID
+                val profile = com.zionhuang.innertube.YouTube.artist(ytmItem.id).getOrNull()
+                if (profile == null) {
+                    _uiState.update { it.copy(error = context.getString(R.string.could_not_find_artist), isLoading = false) }
+                    return@launch
+                }
+
+                // 3. Map to local UI models (avoiding DB inserts entirely)
+                val syntheticArtist = Artist(
+                    id = id,
+                    name = profile.artist.title,
+                    songCount = 0,
+                    imageUrl = profile.artist.thumbnail
+                )
+
+                // 4. Extract songs directly from the profile's sections
+                val extractedSongs = mutableListOf<Song>()
+                profile.sections.forEach { section ->
+                    section.items.forEach { item ->
+                        if (item is com.zionhuang.innertube.models.SongItem) {
+                            extractedSongs.add(
+                                Song(
+                                    id = "ytm_${item.id}",
+                                    title = item.title,
+                                    artist = profile.artist.title,
+                                    artistId = id,
+                                    album = item.album?.name ?: "Unknown",
+                                    albumId = 0L,
+                                    path = "",
+                                    contentUriString = "ytm://${item.id}",
+                                    albumArtUriString = item.thumbnail,
+                                    duration = (item.duration?.toLong() ?: 0L) * 1000L,
+                                    mimeType = null,
+                                    bitrate = null,
+                                    sampleRate = null,
+                                    ytmusicId = item.id
+                                )
+                            )
+                        }
+                    }
+                }
+
+                val allSongs = if (extractedSongs.isEmpty()) localSongs else extractedSongs
+                val albumSections = buildAlbumSections(allSongs)
+                val orderedSongs = albumSections.flatMap { it.songs }
+
+                // Prewarm color scheme
+                val newScheme = try {
+                    themeStateHolder.getOrGenerateColorScheme(syntheticArtist.imageUrl ?: "")
+                } catch (e: Exception) { null }
+                
+                _artistColorScheme.value = newScheme
+                _uiState.value = ArtistDetailUiState(
+                    artist = syntheticArtist,
+                    songs = orderedSongs,
+                    albumSections = albumSections,
+                    effectiveImageUrl = syntheticArtist.imageUrl,
+                    isLoading = false
+                )
+            } catch (e: Exception) {
+                _uiState.update { 
+                    it.copy(error = context.getString(R.string.error_loading_artist, e.message ?: ""), isLoading = false) 
                 }
             }
         }

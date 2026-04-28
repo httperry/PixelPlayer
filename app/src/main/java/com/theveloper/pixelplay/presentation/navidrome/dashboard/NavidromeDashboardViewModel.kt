@@ -43,6 +43,7 @@ class NavidromeDashboardViewModel @Inject constructor(
     }
 
     fun syncAllPlaylistsAndSongs() {
+        if (!repository.isLoggedIn) return
         viewModelScope.launch {
             _isSyncing.value = true
             _syncMessage.value = "Syncing all playlists and songs..."

@@ -51,6 +51,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.sync.withLock
 
 private fun Lyrics.isValid(): Boolean = !synced.isNullOrEmpty() || !plain.isNullOrEmpty()
 
@@ -107,6 +108,8 @@ class LyricsRepositoryImpl @Inject constructor(
 
     // Thread-safe LRU cache to avoid race conditions across concurrent lyrics requests.
     private val lyricsCache = LruCache<String, Lyrics>(MAX_LYRICS_CACHE_SIZE)
+    private val songMutexes = ConcurrentHashMap<String, kotlinx.coroutines.sync.Mutex>()
+    private val apiSemaphore = kotlinx.coroutines.sync.Semaphore(3)
 
     // Thread-safe rate limiting state.
     private val lastApiCalls = ConcurrentHashMap<String, Long>()
@@ -246,18 +249,20 @@ class LyricsRepositoryImpl @Inject constructor(
         
         Log.d(TAG, "===== FETCH LYRICS START: ${song.displayArtist} - ${song.title} (forceRefresh=$forceRefresh, source=$sourcePreference) =====")
 
-        // Check in-memory cache unless force refresh (early return - matching Rhythm)
-        if (!forceRefresh && !isNeteaseTrack) {
-            lyricsCache.get(cacheKey)?.let { cached ->
-                Log.d(TAG, "===== RETURNING IN-MEMORY CACHED LYRICS =====")
-                return@withContext cached
+        val mutex = songMutexes.getOrPut(cacheKey) { kotlinx.coroutines.sync.Mutex() }
+        mutex.withLock {
+            // Check in-memory cache unless force refresh (early return - matching Rhythm)
+            if (!forceRefresh && !isNeteaseTrack) {
+                lyricsCache.get(cacheKey)?.let { cached ->
+                    Log.d(TAG, "===== RETURNING IN-MEMORY CACHED LYRICS =====")
+                    return@withContext cached
+                }
+                Log.d(TAG, "===== NO IN-MEMORY CACHE HIT, proceeding to fetch =====")
+            } else if (!forceRefresh && isNeteaseTrack) {
+                Log.d(TAG, "===== BYPASSING IN-MEMORY CACHE FOR NETEASE TRACK =====")
+            } else {
+                Log.d(TAG, "===== FORCE REFRESH - BYPASSING IN-MEMORY CACHE =====")
             }
-            Log.d(TAG, "===== NO IN-MEMORY CACHE HIT, proceeding to fetch =====")
-        } else if (!forceRefresh && isNeteaseTrack) {
-            Log.d(TAG, "===== BYPASSING IN-MEMORY CACHE FOR NETEASE TRACK =====")
-        } else {
-            Log.d(TAG, "===== FORCE REFRESH - BYPASSING IN-MEMORY CACHE =====")
-        }
 
         // Define source fetchers (matching Rhythm pattern)
         val fetchFromLocal: suspend () -> Lyrics? = {
@@ -319,16 +324,18 @@ class LyricsRepositoryImpl @Inject constructor(
             }
         }
 
-        // No lyrics found from any source
-        Log.d(TAG, "No lyrics found from any source for: ${song.displayArtist} - ${song.title}")
-        return@withContext null
+            // No lyrics found from any source
+            Log.d(TAG, "No lyrics found from any source for: ${song.displayArtist} - ${song.title}")
+            return@withContext null
+        }
     }
 
     /**
      * Fetches lyrics from LRCLIB API with rate limiting (matching Rhythm)
      */
     private suspend fun fetchLyricsFromAPI(song: Song): Lyrics? = withContext(Dispatchers.IO) {
-        val isNetease = isNeteaseSong(song)
+        apiSemaphore.withPermit {
+            val isNetease = isNeteaseSong(song)
 
         if (isNetease) {
             val amlLyrics = fetchFromAmlldb(song)
@@ -498,6 +505,7 @@ class LyricsRepositoryImpl @Inject constructor(
         } catch (e: Exception) {
             Log.e(TAG, "LRCLIB lyrics fetch failed: ${e.message}", e)
             return@withContext null
+        }
         }
     }
 
@@ -728,7 +736,8 @@ class LyricsRepositoryImpl @Inject constructor(
                         if (!hasWordTimestamps && data.wordByWordLyrics.isNullOrBlank()) {
                             // Legacy cache may have flattened word-by-word lines.
                             // Recover richer raw lyrics from DB when available.
-                            val persisted = lyricsDao.getLyrics(song.id.toLong())
+                            val songIdLong = song.id.toLongOrNull() ?: song.id.hashCode().toLong()
+                            val persisted = lyricsDao.getLyrics(songIdLong)
                             if (persisted != null && persisted.content.isNotBlank()) {
                                 val recovered = LyricsUtils.parseLyrics(persisted.content)
                                 val recoveredHasWords = recovered.synced?.any { !it.words.isNullOrEmpty() } == true
@@ -811,7 +820,8 @@ class LyricsRepositoryImpl @Inject constructor(
             }
 
         // First check database for persisted lyrics (was user-imported or cached)
-        val persisted = lyricsDao.getLyrics(song.id.toLong())
+        val songIdLong = song.id.toLongOrNull() ?: song.id.hashCode().toLong()
+        val persisted = lyricsDao.getLyrics(songIdLong)
         if (persisted != null && !persisted.content.isBlank()) {
             val parsedLyrics = LyricsUtils.parseLyrics(persisted.content)
             if (parsedLyrics.isValid()) {
@@ -820,8 +830,11 @@ class LyricsRepositoryImpl @Inject constructor(
             }
         }
         
-        // Skip embedded lyrics for Telegram songs (not supported yet/streamed)
-        if (song.contentUriString.startsWith("telegram://") || song.contentUriString.isEmpty()) {
+        // Skip embedded lyrics for all cloud-streamed songs — these schemes have no local
+        // audio file to extract metadata from. Passing them to ContentResolver.openInputStream
+        // throws FileNotFoundException immediately because there is no registered ContentProvider.
+        val cloudSchemes = listOf("telegram://", "ytm://", "ytmusic://", "netease://", "qqmusic://", "navidrome://", "jellyfin://")
+        if (song.contentUriString.isEmpty() || cloudSchemes.any { song.contentUriString.startsWith(it) }) {
             return@withContext null
         }
 

@@ -48,6 +48,7 @@ import com.zionhuang.innertube.pages.SearchResult
 import com.zionhuang.innertube.pages.SearchSuggestionPage
 import com.zionhuang.innertube.pages.SearchSummary
 import com.zionhuang.innertube.pages.SearchSummaryPage
+import com.zionhuang.innertube.utils.SignatureCipherDecoder
 import io.ktor.client.call.body
 import io.ktor.client.statement.bodyAsText
 import kotlinx.serialization.json.Json
@@ -62,6 +63,9 @@ import java.net.Proxy
  */
 object YouTube {
     private val innerTube = InnerTube()
+
+    var jsEvaluator: com.zionhuang.innertube.utils.JsEvaluator? = null
+    var onObfuscationFailure: (() -> Unit)? = null
 
     var locale: YouTubeLocale
         get() = innerTube.locale
@@ -291,30 +295,30 @@ object YouTube {
         PlaylistPage(
             playlist = PlaylistItem(
                 id = playlistId,
-                title = header?.title?.runs?.firstOrNull()?.text!!,
-                author = header.straplineTextOne?.runs?.firstOrNull()?.let {
+                title = header?.title?.runs?.firstOrNull()?.text ?: "Unknown Playlist",
+                author = header?.straplineTextOne?.runs?.firstOrNull()?.let {
                     Artist(
                         name = it.text,
                         id = it.navigationEndpoint?.browseEndpoint?.browseId
                     )
                 },
-                songCountText = header.secondSubtitle?.runs?.firstOrNull()?.text,
-                thumbnail = header.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails?.lastOrNull()?.url!!,
+                songCountText = header?.secondSubtitle?.runs?.firstOrNull()?.text,
+                thumbnail = header?.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails?.lastOrNull()?.url ?: "",
                 playEndpoint = null,
-                shuffleEndpoint = header.buttons?.lastOrNull()?.menuRenderer?.items?.firstOrNull()?.menuNavigationItemRenderer?.navigationEndpoint?.watchPlaylistEndpoint!!,
-                radioEndpoint = header.buttons.lastOrNull()?.menuRenderer?.items!!.find {
+                shuffleEndpoint = header?.buttons?.lastOrNull()?.menuRenderer?.items?.firstOrNull()?.menuNavigationItemRenderer?.navigationEndpoint?.watchPlaylistEndpoint,
+                radioEndpoint = header?.buttons?.lastOrNull()?.menuRenderer?.items?.find {
                     it.menuNavigationItemRenderer?.icon?.iconType == "MIX"
-                }?.menuNavigationItemRenderer?.navigationEndpoint?.watchPlaylistEndpoint!!
+                }?.menuNavigationItemRenderer?.navigationEndpoint?.watchPlaylistEndpoint
             ),
             songs = response.contents?.twoColumnBrowseResultsRenderer?.secondaryContents?.sectionListRenderer?.contents
                 ?.firstOrNull()?.musicPlaylistShelfRenderer?.contents?.mapNotNull {
                     PlaylistPage.fromMusicResponsiveListItemRenderer(it.musicResponsiveListItemRenderer)
-                }!!,
-            songsContinuation = response.contents.twoColumnBrowseResultsRenderer.secondaryContents.sectionListRenderer
-                .contents.firstOrNull()
+                }.orEmpty(),
+            songsContinuation = response.contents?.twoColumnBrowseResultsRenderer?.secondaryContents?.sectionListRenderer
+                ?.contents?.firstOrNull()
                 ?.musicPlaylistShelfRenderer?.continuations?.getContinuation(),
-            continuation = response.contents.twoColumnBrowseResultsRenderer.secondaryContents.sectionListRenderer
-                .continuations?.getContinuation()
+            continuation = response.contents?.twoColumnBrowseResultsRenderer?.secondaryContents?.sectionListRenderer
+                ?.continuations?.getContinuation()
         )
     }
 
@@ -429,30 +433,107 @@ object YouTube {
             }
     }
 
-    suspend fun player(videoId: String, playlistId: String? = null): Result<PlayerResponse> = runCatching {
+    /**
+     * Ensures the cipher decoder is warm. Called at the top of player() so the first
+     * stream request is never delayed waiting for the player JS.
+     */
+    private suspend fun ensureCipherReady() {
+        if (jsEvaluator != null) {
+            SignatureCipherDecoder.initialize(innerTube.client, jsEvaluator!!)
+        }
+    }
+
+    /**
+     * Post-processes adaptive formats from a browser-client response:
+     *  - Decodes `signatureCipher` → real URL  (WEB_REMIX / ANDROID_MUSIC)
+     *  - Decodes the `n` parameter in direct URLs to remove YouTube throttling
+     */
+    private suspend fun decipherFormats(
+        formats: List<PlayerResponse.StreamingData.Format>
+    ): List<PlayerResponse.StreamingData.Format> = formats.map { fmt ->
+        when {
+            fmt.url != null ->
+                fmt.copy(url = SignatureCipherDecoder.decodeNsig(fmt.url))
+            fmt.signatureCipher != null -> {
+                val url = SignatureCipherDecoder.decipher(fmt.signatureCipher)
+                if (url != null) fmt.copy(url = SignatureCipherDecoder.decodeNsig(url), signatureCipher = null)
+                else fmt
+            }
+            else -> fmt
+        }
+    }
+
+    private suspend fun PlayerResponse.withDecipheredFormats(): PlayerResponse {
+        val sd = streamingData ?: return this
+        return copy(
+            streamingData = sd.copy(
+                adaptiveFormats = decipherFormats(sd.adaptiveFormats),
+                formats = sd.formats?.let { decipherFormats(it) },
+            )
+        )
+    }
+
+    suspend fun player(videoId: String, playlistId: String? = null, poToken: String? = null): Result<PlayerResponse> = runCatching {
         var playerResponse: PlayerResponse
-        if (this.cookie != null) { // if logged in: try ANDROID_MUSIC client first because IOS client does not play age restricted songs
-            playerResponse = innerTube.player(ANDROID_MUSIC, videoId, playlistId).body<PlayerResponse>()
-            if (playerResponse.playabilityStatus.status == "OK") {
+
+        ensureCipherReady()
+
+        // ── Premium / Logged-in path ───────────────────────────────────────────────────────────
+        if (this.cookie != null) {
+            // Attempt WEB_REMIX first (highest quality, but requires cipher decoding)
+            val webRemixRaw = innerTube.player(WEB_REMIX, videoId, playlistId, poToken).body<PlayerResponse>()
+            val webRemixResponse = webRemixRaw.withDecipheredFormats()
+
+            // Check if we successfully deciphered the URLs
+            if (webRemixResponse.playabilityStatus.status == "OK" &&
+                webRemixResponse.streamingData?.adaptiveFormats?.any { it.url != null } == true
+            ) {
+                return@runCatching webRemixResponse
+            } else {
+                // Obfuscation changed or extraction failed! Reset cache so next call retries fresh JS.
+                SignatureCipherDecoder.resetCache()
+                onObfuscationFailure?.invoke()
+            }
+
+            // Fallback to ANDROID_MUSIC (returns direct URLs, no cipher needed)
+            playerResponse = innerTube.player(ANDROID_MUSIC, videoId, playlistId, poToken).body<PlayerResponse>()
+            if (playerResponse.playabilityStatus.status == "OK" &&
+                playerResponse.streamingData?.adaptiveFormats?.any { it.url != null } == true
+            ) {
                 return@runCatching playerResponse
             }
         }
-        playerResponse = innerTube.player(IOS, videoId, playlistId).body<PlayerResponse>()
-        if (playerResponse.playabilityStatus.status == "OK") {
+
+        // ── Unauthenticated: try ANDROID_MUSIC first (direct URLs, no cipher required) ───
+        playerResponse = innerTube.player(ANDROID_MUSIC, videoId, playlistId, poToken).body<PlayerResponse>()
+        if (playerResponse.playabilityStatus.status == "OK" &&
+            playerResponse.streamingData?.adaptiveFormats?.any { it.url != null } == true
+        ) {
             return@runCatching playerResponse
         }
-        val safePlayerResponse = innerTube.player(TVHTML5, videoId, playlistId).body<PlayerResponse>()
+
+        // ── IOS client fallback ─────────────────────────────────────────────────────────
+        playerResponse = innerTube.player(IOS, videoId, playlistId, poToken).body<PlayerResponse>()
+        if (playerResponse.playabilityStatus.status == "OK" &&
+            playerResponse.streamingData?.adaptiveFormats?.any { it.url != null } == true
+        ) {
+            return@runCatching playerResponse
+        }
+
+        // ── Last-resort: TVHTML5 + Piped URL injection ───────────────────────────────────────
+        val safePlayerResponse = innerTube.player(TVHTML5, videoId, playlistId, poToken).body<PlayerResponse>()
         if (safePlayerResponse.playabilityStatus.status != "OK") {
+            // Nothing worked — return the last response so callers see the error reason.
             return@runCatching playerResponse
         }
+
+        // As a last resort, we inject unthrottled Piped streams into the TVHTML5 response
         val audioStreams = innerTube.pipedStreams(videoId).body<PipedResponse>().audioStreams
         safePlayerResponse.copy(
             streamingData = safePlayerResponse.streamingData?.copy(
                 adaptiveFormats = safePlayerResponse.streamingData.adaptiveFormats.mapNotNull { adaptiveFormat ->
                     audioStreams.find { it.bitrate == adaptiveFormat.bitrate }?.let {
-                        adaptiveFormat.copy(
-                            url = it.url
-                        )
+                        adaptiveFormat.copy(url = it.url)
                     }
                 }
             )

@@ -2,6 +2,8 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/BgUtils" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/OuterTune" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/yt-dlp-git" vcs="Git" />
   </component>
 </project>

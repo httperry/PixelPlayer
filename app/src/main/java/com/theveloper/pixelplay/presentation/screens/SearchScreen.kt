@@ -462,7 +462,7 @@ fun SearchScreen(
                     showSongInfoBottomSheet = false
                 },
                 onNavigateToArtist = {
-                    navController.navigateSafely(Screen.ArtistDetail.createRoute(currentSong.artistId))
+                    navController.navigateSafely(Screen.ArtistDetail.createRoute(currentSong.artistId, currentSong.artist))
                     showSongInfoBottomSheet = false
                 },
                 onNavigateToGenre = {
@@ -820,7 +820,7 @@ fun SearchResultsList(
                                     playerViewModel, onItemSelected
                                 ) {
                                     {
-                                        navController.navigateSafely(Screen.ArtistDetail.createRoute(item.artist.id))
+                                        navController.navigateSafely(Screen.ArtistDetail.createRoute(item.artist.id, item.artist.name))
                                         onItemSelected()
                                     }
                                 }

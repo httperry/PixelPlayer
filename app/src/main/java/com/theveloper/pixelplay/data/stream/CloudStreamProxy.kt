@@ -156,7 +156,11 @@ abstract class CloudStreamProxy<K : Any>(
     // ─── Overridable Hooks ─────────────────────────────────────────────
 
     /** Extract the raw ID string from a parsed URI. Override for custom URI layouts. */
-    protected open fun extractIdFromUri(uri: Uri): String? = uri.host
+    protected open fun extractIdFromUri(uri: Uri): String? {
+        // Fallback for valid cloud IDs that contain underscores (e.g. YouTube Video IDs)
+        // which parse as a null host under RFC 2396.
+        return uri.host ?: uri.toString().removePrefix("${uri.scheme}://").substringBefore("/")
+    }
 
     // ─── Internal ──────────────────────────────────────────────────────
 

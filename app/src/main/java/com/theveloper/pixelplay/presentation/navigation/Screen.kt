@@ -33,8 +33,15 @@ sealed class Screen(val route: String) {
         fun createRoute(albumId: Long) = "album_detail/$albumId"
     }
 
-    object ArtistDetail : Screen("artist_detail/{artistId}") {
-        fun createRoute(artistId: Long) = "artist_detail/$artistId"
+    object ArtistDetail : Screen("artist_detail/{artistId}?artistName={artistName}") {
+        fun createRoute(artistId: Long, artistName: String? = null): String {
+            val base = "artist_detail/$artistId"
+            return if (artistName != null) {
+                "$base?artistName=${java.net.URLEncoder.encode(artistName, "UTF-8")}"
+            } else {
+                base
+            }
+        }
     }
 
     object EditTransition : Screen("edit_transition?playlistId={playlistId}") {

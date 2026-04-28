@@ -522,10 +522,14 @@ object AppModule {
     @Singleton
     fun provideYTMusicStreamProxy(
         okHttpClient: OkHttpClient,
+        sessionRepo: com.theveloper.pixelplay.data.network.ytmusic.YTMSessionRepository,
+        poTokenGenerator: com.theveloper.pixelplay.data.network.ytmusic.YouTubePoTokenGenerator,
         @dagger.hilt.android.qualifiers.ApplicationContext context: android.content.Context
     ): com.theveloper.pixelplay.data.network.ytmusic.YTMusicStreamProxy {
         return com.theveloper.pixelplay.data.network.ytmusic.YTMusicStreamProxy(
             okHttpClient = okHttpClient,
+            sessionRepo = sessionRepo,
+            poTokenGenerator = poTokenGenerator,
             context = context
         )
     }

@@ -199,7 +199,7 @@ fun DailyMixScreen(
                 showSongInfoSheet = false
             },
             onNavigateToArtist = {
-                navController.navigateSafely(Screen.ArtistDetail.createRoute(song.artistId))
+                navController.navigateSafely(Screen.ArtistDetail.createRoute(song.artistId, song.artist))
                 showSongInfoSheet = false
             },
             onNavigateToGenre = {

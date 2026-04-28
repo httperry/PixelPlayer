@@ -149,7 +149,7 @@ fun RecentlyPlayedSection(
                 verticalArrangement = Arrangement.spacedBy(HomeRecentlyPlayedPillSpacing),
                 horizontalAlignment = Alignment.Start
             ) {
-                songRows.forEach { row ->
+                songRows.forEachIndexed { rowIndex, row ->
                     if (row.pills.isEmpty()) {
                         Spacer(modifier = Modifier.height(HomeRecentlyPlayedPillHeight))
                     } else {
@@ -163,8 +163,8 @@ fun RecentlyPlayedSection(
                             if (startContentPadding > 0.dp) {
                                 Spacer(modifier = Modifier.width(startContentPadding))
                             }
-                            row.pills.forEach { cell ->
-                                key(cell.item.song.id) {
+                            row.pills.forEachIndexed { cellIndex, cell ->
+                                key(cell.item.song.id, rowIndex, cellIndex) {
                                     RecentlyPlayedPill(
                                         item = cell.item,
                                         isCurrentSong = currentSongId == cell.item.song.id,

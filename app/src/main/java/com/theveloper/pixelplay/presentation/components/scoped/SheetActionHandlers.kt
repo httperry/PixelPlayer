@@ -95,7 +95,7 @@ internal fun rememberSheetActionHandlers(
             queueSheetControllerState.value.animate(false)
             sheetModalOverlayControllerState.value.updateSelectedSongForInfo(null)
             if (song.artistId != -1L) {
-                navController.navigateSafely(Screen.ArtistDetail.createRoute(song.artistId))
+                navController.navigateSafely(Screen.ArtistDetail.createRoute(song.artistId, song.artist))
             }
         }
     }

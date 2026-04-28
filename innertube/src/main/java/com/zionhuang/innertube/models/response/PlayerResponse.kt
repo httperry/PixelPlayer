@@ -57,6 +57,9 @@ data class PlayerResponse(
             val audioChannels: Int?,
             val loudnessDb: Double?,
             val lastModified: Long?,
+            // Present instead of `url` when YouTube returns a signature-ciphered stream URL.
+            // Browser clients (WEB_REMIX, WEB) trigger this — mobile clients (IOS, ANDROID) do not.
+            val signatureCipher: String? = null,
         ) {
             val isAudio: Boolean
                 get() = width == null

@@ -1,0 +1,31 @@
+[debug] Command-line config: ['-v', 'https://www.youtube.com/watch?v=BaW_jenozKc', '--skip-download', '--js-runtimes', 'node']
+[debug] Encodings: locale UTF-8, fs utf-8, pref UTF-8, out utf-8 (dumb,No ANSI), error utf-8 (dumb,No ANSI), screen utf-8 (dumb,No ANSI)
+[debug] yt-dlp version stable@2026.03.17 from yt-dlp/yt-dlp [04d6974f5] (pip)
+[debug] Python 3.12.7 (CPython arm64 64bit) - macOS-26.4.1-arm64-arm-64bit (OpenSSL 3.0.15 3 Sep 2024)
+[debug] exe versions: ffmpeg 8.1 (setts), ffprobe 8.1
+[debug] Optional libraries: certifi-2026.02.25, requests-2.32.3, sqlite3-3.45.3, urllib3-2.6.3, websockets-15.0.1, yt_dlp_ejs-0.8.0
+[debug] JS runtimes: node-22.22.2
+[debug] Proxy map: {}
+[debug] Request Handlers: urllib, requests, websockets
+[debug] Plugin directories: none
+[debug] Loaded 1864 extractors
+[debug] [youtube] [pot] PO Token Providers: none
+[debug] [youtube] [pot] PO Token Cache Providers: memory
+[debug] [youtube] [pot] PO Token Cache Spec Providers: webpo
+[debug] [youtube] [jsc] JS Challenge Providers: bun (unavailable), deno (unavailable), node, quickjs (unavailable)
+[youtube] Extracting URL: https://www.youtube.com/watch?v=BaW_jenozKc
+[youtube] BaW_jenozKc: Downloading webpage
+[debug] [youtube] Forcing "main" player JS variant for player 8456c9de
+        original url = /s/player/8456c9de/player_es6.vflset/en_US/base.js
+[youtube] BaW_jenozKc: Downloading android vr player API JSON
+[debug] [youtube] BaW_jenozKc: android_vr player response playability status: ERROR
+[debug] [youtube] BaW_jenozKc: web_safari player response playability status: ERROR
+ERROR: [youtube] BaW_jenozKc: Video unavailable
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages/yt_dlp/extractor/common.py", line 765, in extract
+    ie_result = self._real_extract(url)
+                ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages/yt_dlp/extractor/youtube/_video.py", line 4061, in _real_extract
+    self.raise_no_formats(reason, expected=True)
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages/yt_dlp/extractor/common.py", line 1277, in raise_no_formats
+    raise ExtractorError(msg, expected=expected, video_id=video_id)
+

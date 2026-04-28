@@ -50,6 +50,7 @@ class YTMSessionRepository @Inject constructor(
                 .firstOrNull()
         }
         com.zionhuang.innertube.YouTube.cookie = cookies
+        com.zionhuang.innertube.YouTube.useLoginForBrowse = !cookies.isNullOrBlank()
         return cookies
     }
 
@@ -90,6 +91,7 @@ class YTMSessionRepository @Inject constructor(
             if (sapisid != null) prefs[KEY_SAPISID] = sapisid
         }
         com.zionhuang.innertube.YouTube.cookie = cookieString
+        com.zionhuang.innertube.YouTube.useLoginForBrowse = true
         Log.d(TAG, "YTM auth headers saved (authUser=$authUser, hasSapisid=${sapisid != null})")
     }
 
@@ -137,6 +139,7 @@ class YTMSessionRepository @Inject constructor(
             if (email != null) prefs[KEY_LOGIN_EMAIL] = email
         }
         com.zionhuang.innertube.YouTube.cookie = rawCookieString
+        com.zionhuang.innertube.YouTube.useLoginForBrowse = true
         Log.d(TAG, "YTM session saved (email=$email, hasSapisid=${sapisid != null})")
     }
 
@@ -144,6 +147,7 @@ class YTMSessionRepository @Inject constructor(
     suspend fun clearSession() {
         context.ytmDataStore.edit { it.clear() }
         com.zionhuang.innertube.YouTube.cookie = null
+        com.zionhuang.innertube.YouTube.useLoginForBrowse = false
         Log.d(TAG, "YTM session cleared")
     }
 

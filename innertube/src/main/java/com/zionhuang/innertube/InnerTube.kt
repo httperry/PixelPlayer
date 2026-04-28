@@ -28,6 +28,9 @@ import java.util.*
 class InnerTube {
     private var httpClient = createClient()
 
+    /** Exposed for [com.zionhuang.innertube.utils.SignatureCipherDecoder] — same client, same proxy/brotli config. */
+    internal val client: HttpClient get() = httpClient
+
     var locale = YouTubeLocale(
         gl = Locale.getDefault().country,
         hl = Locale.getDefault().toLanguageTag()
@@ -125,6 +128,7 @@ class InnerTube {
         client: YouTubeClient,
         videoId: String,
         playlistId: String?,
+        poToken: String? = null,
     ) = httpClient.post("player") {
         ytClient(client, setLogin = true)
         setBody(
@@ -139,7 +143,9 @@ class InnerTube {
                     } else it
                 },
                 videoId = videoId,
-                playlistId = playlistId
+                playlistId = playlistId,
+                serviceIntegrityDimensions = poToken?.let { com.zionhuang.innertube.models.body.ServiceIntegrityDimensions(poToken = it) },
+                contentCheckOk = true
             )
         )
     }

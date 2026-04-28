@@ -8,5 +8,11 @@ data class PlayerBody(
     val context: Context,
     val videoId: String,
     val playlistId: String?,
+    val serviceIntegrityDimensions: ServiceIntegrityDimensions? = null,
     val contentCheckOk: Boolean = true,
+)
+
+@Serializable
+data class ServiceIntegrityDimensions(
+    val poToken: String? = null
 )

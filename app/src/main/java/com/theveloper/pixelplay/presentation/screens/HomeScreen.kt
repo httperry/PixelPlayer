@@ -403,7 +403,7 @@ fun HomeScreen(
                                 navController.navigateSafely(Screen.AlbumDetail.createRoute(song.albumId))
                             },
                             onNavigateToArtist = { song ->
-                                navController.navigateSafely(Screen.ArtistDetail.createRoute(song.artistId))
+                                navController.navigateSafely(Screen.ArtistDetail.createRoute(song.artistId, song.artist))
                             },
                             onNavigateToGenre = { song ->
                                 song.genre?.let {
