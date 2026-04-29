@@ -52,6 +52,11 @@ data class PlaylistUiState(
     val isLoading: Boolean = false,
     val playlistNotFound: Boolean = false,
 
+    // YTM lazy-loading pagination
+    val ytmContinuationToken: String? = null,
+    val isLoadingMoreSongs: Boolean = false,
+    val hasMoreSongs: Boolean = false,
+
     //Sort option
     val currentPlaylistSortOption: SortOption = SortOption.PlaylistNameAZ,
     val currentPlaylistSongsSortOption: SortOption = SortOption.SongTitleAZ,
@@ -229,22 +234,27 @@ class PlaylistViewModel @Inject constructor(
                         .find { it.id == playlistId }
 
                     if (playlist != null) {
-                        // YTM playlists: fetch songs from backend, not local Room
-                        val songsList: List<Song> = if (playlist.source == "YTM") {
-                            withContext(Dispatchers.IO) {
+                        // YTM playlists: lazy-load first page only, store continuation for more
+                        val songsList: List<Song>
+                        val ytmToken: String?
+                        if (playlist.source == "YTM") {
+                            val (firstPage, token) = withContext(Dispatchers.IO) {
                                 try {
-                                    ytMusicRepository.getPlaylistTracks(playlistId)
+                                    ytMusicRepository.getPlaylistFirstPage(playlistId)
                                 } catch (e: Exception) {
-                                    Log.e("PlaylistVM", "Failed to load YTM playlist tracks: ${e.message}", e)
-                                    emptyList()
+                                    Log.e("PlaylistVM", "Failed to load YTM first page: ${e.message}", e)
+                                    Pair(emptyList<Song>(), null)
                                 }
                             }
+                            songsList = firstPage
+                            ytmToken = token
                         } else {
                             val orderMode = _uiState.value.playlistOrderModes[playlistId]
                                 ?: PlaylistSongsOrderMode.Manual
-                            withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            songsList = withContext(kotlinx.coroutines.Dispatchers.IO) {
                                 musicRepository.getSongsByIds(playlist.songIds).first()
                             }
+                            ytmToken = null
                         }
 
                         val orderMode = _uiState.value.playlistOrderModes[playlistId]
@@ -264,7 +274,11 @@ class PlaylistViewModel @Inject constructor(
                                 playlistSongsOrderMode = orderMode,
                                 playlistOrderModes = it.playlistOrderModes + (playlistId to orderMode),
                                 isLoading = false,
-                                playlistNotFound = false
+                                playlistNotFound = false,
+                                // YTM pagination state
+                                ytmContinuationToken = if (playlist.source == "YTM") ytmToken else null,
+                                hasMoreSongs = if (playlist.source == "YTM") ytmToken != null else false,
+                                isLoadingMoreSongs = false
                             )
                         }
                     } else {
@@ -290,6 +304,44 @@ class PlaylistViewModel @Inject constructor(
                         currentPlaylistSongs = emptyList()
                     )
                 }
+            }
+        }
+    }
+
+    /**
+     * Loads the next page of songs for a YTM playlist and appends them to [currentPlaylistSongs].
+     * Called from the UI when the user scrolls near the end of the list.
+     *
+     * No-op if:
+     * - already loading more (prevents duplicate requests)
+     * - there is no continuation token (all pages exhausted)
+     * - the current playlist is not a YTM source playlist
+     */
+    fun loadMorePlaylistSongs() {
+        val state = _uiState.value
+        if (state.isLoadingMoreSongs) return
+        if (!state.hasMoreSongs) return
+        val token = state.ytmContinuationToken ?: return
+        if (state.currentPlaylistDetails?.source != "YTM") return
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoadingMoreSongs = true) }
+            try {
+                val (nextSongs, newToken) = withContext(Dispatchers.IO) {
+                    ytMusicRepository.getPlaylistNextPage(token)
+                }
+                _uiState.update {
+                    it.copy(
+                        currentPlaylistSongs = it.currentPlaylistSongs + nextSongs,
+                        ytmContinuationToken = newToken,
+                        hasMoreSongs = newToken != null,
+                        isLoadingMoreSongs = false
+                    )
+                }
+                Log.d("PlaylistVM", "Loaded ${nextSongs.size} more songs; hasMore=${newToken != null}")
+            } catch (e: Exception) {
+                Log.e("PlaylistVM", "Failed to load more songs", e)
+                _uiState.update { it.copy(isLoadingMoreSongs = false) }
             }
         }
     }

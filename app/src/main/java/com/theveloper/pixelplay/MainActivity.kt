@@ -867,8 +867,10 @@ class MainActivity : ComponentActivity() {
                                 .distinctUntilChanged()
                         }.collectAsStateWithLifecycle(initialValue = false)
                         val routesWithHiddenMiniPlayer = remember { setOf(Screen.NavBarCrRad.route) }
-                        val shouldHideMiniPlayer by remember(currentRoute) {
-                            derivedStateOf { currentRoute in routesWithHiddenMiniPlayer }
+                        
+                        val isDynamicallyHidden by playerViewModel.isMiniPlayerDynamicallyHidden.collectAsStateWithLifecycle()
+                        val shouldHideMiniPlayer by remember(currentRoute, isDynamicallyHidden) {
+                            derivedStateOf { currentRoute in routesWithHiddenMiniPlayer || isDynamicallyHidden }
                         }
 
                         val miniPlayerH = with(density) { MiniPlayerHeight.toPx() }

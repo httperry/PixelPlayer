@@ -270,15 +270,44 @@ class YTMusicRepository @Inject constructor(
      * Fetch YTM radio queue for a given videoId.
      * Returns the "up next" recommended songs as the player queue.
      */
-        suspend fun getPlaylistTracks(playlistId: String): List<Song> {
+        /**
+         * Fetches the FIRST page of songs for a YTM playlist.
+         *
+         * @return Pair of (songs in first page, continuation token for next page or null if no more)
+         */
+        suspend fun getPlaylistFirstPage(playlistId: String): Pair<List<Song>, String?> {
             return withContext(Dispatchers.IO) {
                 try {
                     val result = com.zionhuang.innertube.YouTube.playlist(playlistId)
-                    val page = result.getOrNull() ?: return@withContext emptyList()
-                    page.songs.map { it.toDomainSong() }
+                    val page = result.getOrNull() ?: return@withContext Pair(emptyList(), null)
+                    val songs = page.songs.map { it.toDomainSong() }
+                    // songsContinuation is the token to get more songs within this playlist page;
+                    // continuation is the outer sectionListRenderer continuation (rarely used).
+                    val token = page.songsContinuation ?: page.continuation
+                    Pair(songs, token)
                 } catch (e: Exception) {
-                    android.util.Log.e("YTMusicRepository", "Failed to fetch playlist tracks: $playlistId", e)
-                    emptyList()
+                    android.util.Log.e("YTMusicRepository", "Failed to fetch first page of playlist: $playlistId", e)
+                    Pair(emptyList(), null)
+                }
+            }
+        }
+
+        /**
+         * Fetches the NEXT page of songs using a continuation token.
+         *
+         * @param continuation Token returned from [getPlaylistFirstPage] or a previous [getPlaylistNextPage] call.
+         * @return Pair of (next batch of songs, new continuation token or null if exhausted)
+         */
+        suspend fun getPlaylistNextPage(continuation: String): Pair<List<Song>, String?> {
+            return withContext(Dispatchers.IO) {
+                try {
+                    val result = com.zionhuang.innertube.YouTube.playlistContinuation(continuation)
+                    val page = result.getOrNull() ?: return@withContext Pair(emptyList(), null)
+                    val songs = page.songs.map { it.toDomainSong() }
+                    Pair(songs, page.continuation)
+                } catch (e: Exception) {
+                    android.util.Log.e("YTMusicRepository", "Failed to fetch next playlist page", e)
+                    Pair(emptyList(), null)
                 }
             }
         }

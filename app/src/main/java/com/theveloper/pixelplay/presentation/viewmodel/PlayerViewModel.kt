@@ -619,8 +619,15 @@ class PlayerViewModel @Inject constructor(
     private val _isImmersiveTemporarilyDisabled = MutableStateFlow(false)
     val isImmersiveTemporarilyDisabled: StateFlow<Boolean> = _isImmersiveTemporarilyDisabled.asStateFlow()
 
+    private val _isMiniPlayerDynamicallyHidden = MutableStateFlow(false)
+    val isMiniPlayerDynamicallyHidden: StateFlow<Boolean> = _isMiniPlayerDynamicallyHidden.asStateFlow()
+
     fun setImmersiveTemporarilyDisabled(disabled: Boolean) {
         _isImmersiveTemporarilyDisabled.value = disabled
+    }
+
+    fun setMiniPlayerDynamicallyHidden(hidden: Boolean) {
+        _isMiniPlayerDynamicallyHidden.value = hidden
     }
 
     val albumArtQuality: StateFlow<AlbumArtQuality> = userPreferencesRepository.albumArtQualityFlow
